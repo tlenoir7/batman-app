@@ -41,6 +41,37 @@ function extractReplyFromPayload(data: unknown): string | null {
 /**
  * POST /api/message — briefing channel. On failure or empty body, returns null (caller stays silent).
  */
+export type CaseBoardRow = {
+  case_id: string;
+  status: 'active' | 'dormant' | 'critical' | string;
+  title: string;
+  last_update: string;
+  summary: string;
+};
+
+/** GET /api/cases — active case board entries (JSON array). On failure, []. */
+export async function fetchActiveCases(): Promise<CaseBoardRow[]> {
+  if (!API_BASE) return [];
+
+  try {
+    const res = await fetch(`${API_BASE.replace(/\/$/, '')}/api/cases`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(data)) return [];
+    return data.filter(
+      (row): row is CaseBoardRow =>
+        row != null &&
+        typeof row === 'object' &&
+        typeof (row as CaseBoardRow).case_id === 'string'
+    );
+  } catch {
+    return [];
+  }
+}
+
 export async function postBriefingMessage(payload: {
   message: string;
   first_contact?: boolean;

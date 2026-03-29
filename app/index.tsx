@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -160,29 +161,46 @@ export default function Index() {
             <Text style={styles.headerLabel} allowFontScaling={false}>
               BATMAN-CONSCIOUSNESS
             </Text>
-            <View style={styles.statusWrap}>
-              {voiceSessionLive ? (
-                <Animated.View
-                  style={[
-                    styles.statusDot,
-                    {
-                      backgroundColor: Colors.accent,
-                      opacity: pulseOpacity,
-                    },
-                  ]}
+            <View style={styles.headerRight}>
+              <Pressable
+                onPress={() => router.push('./caseboard')}
+                style={({ pressed }) => [
+                  styles.boardBtn,
+                  pressed && styles.boardBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Open case board"
+              >
+                <Ionicons
+                  name="grid-outline"
+                  size={20}
+                  color={Colors.accent}
                 />
-              ) : (
-                <View
-                  style={[
-                    styles.statusDot,
-                    {
-                      backgroundColor: connected
-                        ? Colors.signalOnline
-                        : Colors.alert,
-                    },
-                  ]}
-                />
-              )}
+              </Pressable>
+              <View style={styles.statusWrap}>
+                {voiceSessionLive ? (
+                  <Animated.View
+                    style={[
+                      styles.statusDot,
+                      {
+                        backgroundColor: Colors.accent,
+                        opacity: pulseOpacity,
+                      },
+                    ]}
+                  />
+                ) : (
+                  <View
+                    style={[
+                      styles.statusDot,
+                      {
+                        backgroundColor: connected
+                          ? Colors.signalOnline
+                          : Colors.alert,
+                      },
+                    ]}
+                  />
+                )}
+              </View>
             </View>
           </View>
         </View>
@@ -307,8 +325,22 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     fontVariant: ['small-caps'],
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  boardBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  boardBtnPressed: {
+    opacity: 0.65,
+  },
   statusWrap: {
-    paddingLeft: 8,
+    paddingLeft: 4,
   },
   statusDot: {
     width: 6,
