@@ -113,12 +113,6 @@ export function getSocket(): Socket | null {
  * Single shared Socket.IO client to the Batman backend (mirrors angel-app transport options).
  */
 export function connectSocket(): Socket | null {
-  if (!API_BASE) {
-    console.warn('[batman-socket] EXPO_PUBLIC_API_URL is not set; skipping connection');
-    notifyConnection(false);
-    return null;
-  }
-
   if (socket?.connected) {
     return socket;
   }

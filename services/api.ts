@@ -10,11 +10,6 @@ export async function apiFetch<T = unknown>(
   path: string,
   init?: RequestInit
 ): Promise<{ ok: boolean; status: number; data: T | null }> {
-  if (!API_BASE) {
-    console.warn('[batman-api] EXPO_PUBLIC_API_URL is not set');
-    return { ok: false, status: 0, data: null };
-  }
-
   const res = await fetch(joinUrl(path), init);
   let data: T | null = null;
   try {
@@ -51,10 +46,8 @@ export type CaseBoardRow = {
 
 /** GET /api/cases — active case board entries (JSON array). On failure, []. */
 export async function fetchActiveCases(): Promise<CaseBoardRow[]> {
-  if (!API_BASE) return [];
-
   try {
-    const res = await fetch(`${API_BASE.replace(/\/$/, '')}/api/cases`, {
+    const res = await fetch(joinUrl('/api/cases'), {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });
@@ -76,8 +69,6 @@ export async function postBriefingMessage(payload: {
   message: string;
   first_contact?: boolean;
 }): Promise<string | null> {
-  if (!API_BASE) return null;
-
   try {
     const { ok, data } = await apiFetch<unknown>('/api/message', {
       method: 'POST',
