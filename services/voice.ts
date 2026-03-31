@@ -64,6 +64,9 @@ const REALTIME_RECORDING_OPTIONS = {
   web: { mimeType: 'audio/wav', bitsPerSecond: 384000 },
 };
 
+/** Same capture settings as realtime; use for file-based voice notes (Whisper). */
+export const VOICE_NOTE_RECORDING_OPTIONS = REALTIME_RECORDING_OPTIONS;
+
 function uint8ArrayToBase64(u8: Uint8Array): string {
   return arrayBufferToBase64(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength));
 }

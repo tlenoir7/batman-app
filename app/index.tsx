@@ -389,6 +389,21 @@ export default function Index() {
                   color={Colors.accent}
                 />
               </Pressable>
+              <Pressable
+                onPress={() => router.push('./voicenote')}
+                style={({ pressed }) => [
+                  styles.boardBtn,
+                  pressed && styles.boardBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Open voice note"
+              >
+                <Ionicons
+                  name="mic-circle-outline"
+                  size={20}
+                  color="#2d4a8a"
+                />
+              </Pressable>
               <View style={styles.statusWrap}>
                 {voiceSessionLive ? (
                   <View

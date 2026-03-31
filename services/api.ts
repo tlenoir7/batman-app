@@ -167,6 +167,64 @@ export async function fetchCaseTimeline(caseId: string): Promise<TimelineEntry[]
   }
 }
 
+/** POST /api/voice/transcribe — base64 audio (e.g. WAV) → Whisper text. */
+export async function transcribeVoiceNote(
+  audioB64: string,
+  fileName?: string
+): Promise<string | null> {
+  const b64 = String(audioB64 || '').trim();
+  if (!b64) return null;
+  try {
+    const { ok, data } = await apiFetch<{
+      ok?: boolean;
+      transcription?: string;
+      error?: string;
+    }>('/api/voice/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        audio_b64: b64,
+        file_name: fileName ?? 'recording.wav',
+      }),
+    });
+    if (!ok || data == null) return null;
+    const t = typeof data.transcription === 'string' ? data.transcription.trim() : '';
+    return t || null;
+  } catch {
+    return null;
+  }
+}
+
+/** POST /api/voice/file — file observation + Bruce note on case. */
+export async function fileVoiceNote(
+  transcription: string,
+  caseId: string,
+  audioDuration?: number
+): Promise<{ ok: boolean; bruce_note?: string }> {
+  const t = String(transcription || '').trim();
+  const cid = String(caseId || '').trim();
+  if (!t || !cid) return { ok: false };
+  try {
+    const { ok, data } = await apiFetch<{ ok?: boolean; bruce_note?: string }>('/api/voice/file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        transcription: t,
+        case_id: cid,
+        audio_duration: audioDuration,
+      }),
+    });
+    if (!ok || data == null || typeof data !== 'object') return { ok: false };
+    const d = data as Record<string, unknown>;
+    return {
+      ok: Boolean(d.ok),
+      bruce_note: typeof d.bruce_note === 'string' ? d.bruce_note : undefined,
+    };
+  } catch {
+    return { ok: false };
+  }
+}
+
 /** GET /api/profiles/{profile_id}/linked-cases */
 export async function fetchLinkedCases(profileId: string): Promise<CaseBoardRow[]> {
   const pid = encodeURIComponent(String(profileId || '').trim());

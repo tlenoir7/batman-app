@@ -67,6 +67,13 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="voicenote"
+          options={{
+            title: 'Voice Note',
+            headerBackTitle: 'Briefing',
+          }}
+        />
+        <Stack.Screen
           name="suitdetail"
           options={{
             title: 'Suit',
