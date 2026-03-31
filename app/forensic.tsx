@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, type FlashMode, useCameraPermissions } from 'expo-camera';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Modal,
@@ -105,13 +105,7 @@ export default function ForensicScreen() {
   const flashIcon = useMemo(() => (flash === 'on' ? 'flash' : 'flash-off'), [flash]);
 
   const onCancel = useCallback(() => {
-    setMode('camera');
-    setCapturedUri(null);
-    setCapturedB64(null);
-    setContextText('');
-    setReport(null);
-    setFiled(false);
-    setAttachOpen(false);
+    router.back();
   }, []);
 
   const onCapture = useCallback(async () => {
@@ -135,6 +129,10 @@ export default function ForensicScreen() {
     setReport(null);
     setFiled(false);
     setMode('camera');
+  }, []);
+
+  const onDone = useCallback(() => {
+    router.back();
   }, []);
 
   const onAnalyze = useCallback(async () => {
@@ -181,6 +179,7 @@ export default function ForensicScreen() {
       });
       setAttachOpen(false);
       setFiled(ok);
+      if (ok) setTimeout(() => router.back(), 1500);
     },
     [capturedB64, report, analysisMode]
   );
@@ -426,7 +425,7 @@ export default function ForensicScreen() {
                 <Text style={styles.bottomBtnAccent}>ATTACH TO CASE</Text>
               </Pressable>
               <Pressable
-                onPress={onCancel}
+                onPress={onDone}
                 style={({ pressed }) => [
                   styles.actionBtn,
                   pressed && styles.bottomBtnPressed,
