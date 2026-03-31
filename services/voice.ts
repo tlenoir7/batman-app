@@ -16,7 +16,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated } from 'react-native';
 
-import { getSocket, subscribeSocketConnection } from './socket';
+import { connectSocket, getSocket, subscribeSocketConnection } from './socket';
 
 /** Deepest Realtime voice; sent on `realtime_start` for bruce_realtime_server.py. */
 export const REALTIME_VOICE = 'onyx' as const;
@@ -391,14 +391,11 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
 
       if (!voiceSessionActiveRef.current) return;
 
-      const rec = realtimeAudioRecorderRef.current;
-      if (!rec) return;
-
-      await rec.prepareToRecordAsync();
+      await realtimeAudioRecorder.prepareToRecordAsync();
       if (!voiceSessionActiveRef.current) return;
       if (!realtimeReadyRef.current || !getSocket()?.connected) return;
 
-      rec.record();
+      realtimeAudioRecorder.record();
       realtimePcmSentRef.current = 0;
 
       realtimeChunkIntervalRef.current = setInterval(async () => {
@@ -451,12 +448,17 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
     prevSessionActiveRef.current = now;
 
     if (!was && now) {
-      const s = getSocket();
+      const s = connectSocket();
       if (!s?.connected) {
         setSessionActive(false);
         return;
       }
       setRealtimeReady(false);
+      console.log('[realtime] emitting realtime_start', {
+        socketId: s.id,
+        connected: s.connected,
+        voice: REALTIME_VOICE,
+      });
       s.emit('realtime_start', { voice: REALTIME_VOICE });
     } else if (was && !now) {
       if (realtimePlaybackFallbackTimerRef.current) {
@@ -491,6 +493,7 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
   }, []);
 
   useEffect(() => {
+    if (!socketConnected) return;
     const socket = getSocket();
     if (!socket) return;
 
