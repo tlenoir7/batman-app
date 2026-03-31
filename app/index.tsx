@@ -2,7 +2,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Animated,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -19,7 +18,6 @@ import { postBriefingMessage } from '../services/api';
 import { getSocket, subscribeSocketConnection } from '../services/socket';
 import { useRealtimeVoiceSession } from '../services/voice';
 
-const TYPEWRITER_MS = 30;
 const OPENING_DELAY_MS = 2000;
 
 type BriefRow = {
@@ -43,6 +41,8 @@ export default function Index() {
   const [sending, setSending] = useState(false);
 
   const firstConnectHandledRef = useRef(false);
+  const streamingBruceIdRef = useRef<string | null>(null);
+  const streamingBruceTextRef = useRef<string>('');
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -58,14 +58,13 @@ export default function Index() {
           first_contact: true,
         });
         if (!text) return;
-        const id = makeId();
         setMessages((prev) => [
           {
-            id,
+            id: makeId(),
             role: 'bruce',
             text,
-            visibleChars: 0,
-            useTypewriter: true,
+            visibleChars: text.length,
+            useTypewriter: false,
           },
           ...prev,
         ]);
@@ -77,22 +76,128 @@ export default function Index() {
     };
   }, []);
 
+  // Socket.IO streaming (mirror angel-app): angel_chunk appends; angel_reply_complete finalizes.
   useEffect(() => {
-    const row = messages.find(
-      (m) => m.useTypewriter && m.visibleChars < m.text.length
-    );
-    if (!row) return;
-    const handle = setTimeout(() => {
+    if (!connected) return;
+    const socket = getSocket();
+    if (!socket) return;
+
+    const onAngelChunk = (payload: unknown) => {
+      const chunk =
+        typeof payload === 'string'
+          ? payload
+          : (payload as { chunk?: unknown })?.chunk ?? '';
+      const c = String(chunk || '');
+      if (!c) return;
+
+      if (!streamingBruceIdRef.current) {
+        const id = makeId();
+        streamingBruceIdRef.current = id;
+        streamingBruceTextRef.current = c;
+        setMessages((prev) => [
+          {
+            id,
+            role: 'bruce',
+            text: c,
+            visibleChars: c.length,
+            useTypewriter: false,
+          },
+          ...prev,
+        ]);
+        return;
+      }
+
+      streamingBruceTextRef.current += c;
+      const id = streamingBruceIdRef.current;
+      const nextText = streamingBruceTextRef.current;
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === row.id
-            ? { ...m, visibleChars: Math.min(m.text.length, m.visibleChars + 1) }
+          m.id === id
+            ? {
+                ...m,
+                text: nextText,
+                visibleChars: nextText.length,
+                useTypewriter: false,
+              }
             : m
         )
       );
-    }, TYPEWRITER_MS);
-    return () => clearTimeout(handle);
-  }, [messages]);
+    };
+
+    const onAngelReplyComplete = (payload: unknown) => {
+      const reply =
+        typeof payload === 'string'
+          ? payload
+          : (payload as { reply?: unknown })?.reply ?? '';
+
+      const hadStreaming = Boolean(streamingBruceIdRef.current);
+      const streamed = streamingBruceTextRef.current || '';
+      const finalText = hadStreaming && streamed ? streamed : String(reply || streamed || '');
+
+      if (streamingBruceIdRef.current) {
+        const id = streamingBruceIdRef.current;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === id
+              ? {
+                  ...m,
+                  text: finalText,
+                  visibleChars: finalText.length,
+                  useTypewriter: false,
+                }
+              : m
+          )
+        );
+      } else if (finalText.trim()) {
+        setMessages((prev) => [
+          {
+            id: makeId(),
+            role: 'bruce',
+            text: finalText,
+            visibleChars: finalText.length,
+            useTypewriter: false,
+          },
+          ...prev,
+        ]);
+      }
+
+      streamingBruceIdRef.current = null;
+      streamingBruceTextRef.current = '';
+    };
+
+    const onAngelResponse = (payload: unknown) => {
+      // Back-compat: final response without chunking.
+      if (streamingBruceIdRef.current) return;
+      const reply =
+        typeof payload === 'string'
+          ? payload
+          : (payload as { reply?: unknown; text?: unknown; message?: unknown })?.reply ??
+            (payload as { text?: unknown })?.text ??
+            (payload as { message?: unknown })?.message ??
+            '';
+      const t = String(reply || '').trim();
+      if (!t) return;
+      setMessages((prev) => [
+        {
+          id: makeId(),
+          role: 'bruce',
+          text: t,
+          visibleChars: t.length,
+          useTypewriter: false,
+        },
+        ...prev,
+      ]);
+    };
+
+    socket.on('angel_chunk', onAngelChunk);
+    socket.on('angel_reply_complete', onAngelReplyComplete);
+    socket.on('angel_response', onAngelResponse);
+    return () => {
+      socket.off('angel_chunk', onAngelChunk);
+      socket.off('angel_reply_complete', onAngelReplyComplete);
+      socket.off('angel_response', onAngelResponse);
+    };
+  }, [connected]);
 
   const appendBriefingLine = useCallback(
     (role: 'bruce' | 'tyler', text: string) => {
@@ -131,78 +236,22 @@ export default function Index() {
   );
 
   const realtimeBruceIdRef = useRef<string | null>(null);
-  const realtimeBruceDoneRef = useRef(true);
-  const cursorBlinkRef = useRef(false);
-  const [cursorOn, setCursorOn] = useState(false);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      cursorBlinkRef.current = !cursorBlinkRef.current;
-      setCursorOn(cursorBlinkRef.current);
-    }, 500);
-    return () => clearInterval(t);
-  }, []);
-
   const ensureRealtimeBruceRow = useCallback(() => {
     if (realtimeBruceIdRef.current) return realtimeBruceIdRef.current;
     const id = makeId();
     realtimeBruceIdRef.current = id;
-    realtimeBruceDoneRef.current = false;
     setMessages((prev) => [
       {
         id,
         role: 'bruce',
         text: '',
         visibleChars: 0,
-        useTypewriter: true,
-        showCursor: true,
+        useTypewriter: false,
       },
       ...prev,
     ]);
     return id;
   }, []);
-
-  const appendBruceDelta = useCallback(
-    (delta: string) => {
-      const d = String(delta || '');
-      if (!d) return;
-      const id = ensureRealtimeBruceRow();
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === id
-            ? {
-                ...m,
-                text: m.text + d,
-                useTypewriter: true,
-                showCursor: true,
-              }
-            : m
-        )
-      );
-    },
-    [ensureRealtimeBruceRow]
-  );
-
-  const finalizeBruceTranscript = useCallback((full: string) => {
-    const t = String(full || '').trimEnd();
-    if (!t && !realtimeBruceIdRef.current) return;
-    const id = realtimeBruceIdRef.current ?? ensureRealtimeBruceRow();
-    realtimeBruceDoneRef.current = true;
-    realtimeBruceIdRef.current = null;
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === id
-          ? {
-              ...m,
-              text: t || m.text,
-              visibleChars: (t || m.text).length,
-              useTypewriter: false,
-              showCursor: false,
-            }
-          : m
-      )
-    );
-  }, [ensureRealtimeBruceRow]);
 
   const { voiceSessionLive, pulseOpacity, toggleVoiceSession } =
     useRealtimeVoiceSession({
@@ -222,12 +271,35 @@ export default function Index() {
           return;
         }
 
-        // Bruce stream typing: delta -> append to same row; done -> finalize immediately.
+        // Realtime transcript streaming (no typewriter): deltas append to same line.
         if (!evt.done) {
-          if (evt.delta) appendBruceDelta(evt.delta);
+          if (!evt.delta) return;
+          const id = ensureRealtimeBruceRow();
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === id
+                ? {
+                    ...m,
+                    text: m.text + String(evt.delta),
+                    visibleChars: (m.text + String(evt.delta)).length,
+                    useTypewriter: false,
+                  }
+                : m
+            )
+          );
           return;
         }
-        finalizeBruceTranscript(evt.transcript || '');
+        const finalText = String(evt.transcript || '').trimEnd();
+        const id = realtimeBruceIdRef.current ?? ensureRealtimeBruceRow();
+        realtimeBruceIdRef.current = null;
+        if (!finalText) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === id
+              ? { ...m, text: finalText, visibleChars: finalText.length, useTypewriter: false }
+              : m
+          )
+        );
       },
     });
 
@@ -257,15 +329,20 @@ export default function Index() {
       ...prev,
     ]);
     setDraft('');
-    const reply = await postBriefingMessage({
-      message: raw,
-      first_contact: false,
-    });
+    const socket = getSocket();
+    if (socket?.connected) {
+      streamingBruceIdRef.current = null;
+      streamingBruceTextRef.current = '';
+      socket.emit('user_text', { message: raw });
+      setSending(false);
+      return;
+    }
+
+    const reply = await postBriefingMessage({ message: raw, first_contact: false });
     if (reply) {
-      const bruceId = makeId();
       setMessages((prev) => [
         {
-          id: bruceId,
+          id: makeId(),
           role: 'bruce',
           text: reply,
           visibleChars: reply.length,
@@ -333,7 +410,7 @@ export default function Index() {
               </Pressable>
               <View style={styles.statusWrap}>
                 {voiceSessionLive ? (
-                  <Animated.View
+                  <View
                     style={[
                       styles.statusDot,
                       {
@@ -371,12 +448,7 @@ export default function Index() {
             showsVerticalScrollIndicator={false}
           >
             {messages.map((m) => {
-              const display =
-                m.role === 'bruce' && m.useTypewriter
-                  ? m.text.slice(0, m.visibleChars)
-                  : m.text;
-              const cursor =
-                m.role === 'bruce' && m.showCursor && cursorOn ? '_' : '';
+              const display = m.text;
               return (
                 <Text
                   key={m.id}
@@ -389,7 +461,6 @@ export default function Index() {
                   }
                 >
                   {display}
-                  {cursor}
                 </Text>
               );
             })}
