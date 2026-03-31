@@ -26,6 +26,12 @@ export type RealtimeBriefRole = 'bruce' | 'tyler';
 export type UseRealtimeVoiceOptions = {
   socketConnected: boolean;
   appendBriefingLine: (role: RealtimeBriefRole, text: string) => void;
+  onRealtimeTranscript?: (evt: {
+    role: RealtimeBriefRole;
+    done: boolean;
+    delta?: string;
+    transcript?: string;
+  }) => void;
 };
 
 /** expo-audio: 24 kHz mono PCM16 WAV for Realtime `realtime_audio_chunk` (SDK 55; same as angel-app). */
@@ -136,10 +142,13 @@ function arrayBufferToBase64(buffer: ArrayBufferLike): string {
 }
 
 export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
-  const { socketConnected, appendBriefingLine } = options;
+  const { socketConnected, appendBriefingLine, onRealtimeTranscript } = options;
 
   const appendRef = useRef(appendBriefingLine);
   appendRef.current = appendBriefingLine;
+
+  const transcriptRef = useRef(onRealtimeTranscript);
+  transcriptRef.current = onRealtimeTranscript;
 
   const [sessionActive, setSessionActive] = useState(false);
   const [realtimeReady, setRealtimeReady] = useState(false);
@@ -506,12 +515,31 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
       done?: boolean;
       transcript?: string;
       role?: string;
+      delta?: string;
     }) => {
-      if (!p || !p.done) return;
-      const text = p.transcript != null ? String(p.transcript).trim() : '';
-      if (!text) return;
+      if (!p) return;
       const role: RealtimeBriefRole = p.role === 'assistant' ? 'bruce' : 'tyler';
-      appendRef.current(role, text);
+      const done = Boolean(p.done);
+      const delta = p.delta != null ? String(p.delta) : '';
+      const transcript = p.transcript != null ? String(p.transcript) : '';
+      const handler = transcriptRef.current;
+      handler?.({ role, done, delta, transcript });
+
+      // Default behavior if consumer doesn't handle streaming.
+      if (!handler) {
+        if (done) {
+          const text = transcript.trim();
+          if (!text) return;
+          appendRef.current(role, text);
+        }
+        return;
+      }
+
+      // Ensure Tyler's final transcript still lands even if handler is selective.
+      if (role === 'tyler' && done) {
+        const text = transcript.trim();
+        if (text) appendRef.current('tyler', text);
+      }
     };
 
     const onRealtimeError = (payload: { message?: string }) => {

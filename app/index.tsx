@@ -28,6 +28,7 @@ type BriefRow = {
   text: string;
   visibleChars: number;
   useTypewriter: boolean;
+  showCursor?: boolean;
 };
 
 function makeId(): string {
@@ -111,10 +112,99 @@ export default function Index() {
     []
   );
 
+  const realtimeBruceIdRef = useRef<string | null>(null);
+  const realtimeBruceDoneRef = useRef(true);
+  const cursorBlinkRef = useRef(false);
+  const [cursorOn, setCursorOn] = useState(false);
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      cursorBlinkRef.current = !cursorBlinkRef.current;
+      setCursorOn(cursorBlinkRef.current);
+    }, 500);
+    return () => clearInterval(t);
+  }, []);
+
+  const ensureRealtimeBruceRow = useCallback(() => {
+    if (realtimeBruceIdRef.current) return realtimeBruceIdRef.current;
+    const id = makeId();
+    realtimeBruceIdRef.current = id;
+    realtimeBruceDoneRef.current = false;
+    setMessages((prev) => [
+      {
+        id,
+        role: 'bruce',
+        text: '',
+        visibleChars: 0,
+        useTypewriter: true,
+        showCursor: true,
+      },
+      ...prev,
+    ]);
+    return id;
+  }, []);
+
+  const appendBruceDelta = useCallback(
+    (delta: string) => {
+      const d = String(delta || '');
+      if (!d) return;
+      const id = ensureRealtimeBruceRow();
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id
+            ? {
+                ...m,
+                text: m.text + d,
+                useTypewriter: true,
+                showCursor: true,
+              }
+            : m
+        )
+      );
+    },
+    [ensureRealtimeBruceRow]
+  );
+
+  const finalizeBruceTranscript = useCallback((full: string) => {
+    const t = String(full || '').trimEnd();
+    if (!t && !realtimeBruceIdRef.current) return;
+    const id = realtimeBruceIdRef.current ?? ensureRealtimeBruceRow();
+    realtimeBruceDoneRef.current = true;
+    realtimeBruceIdRef.current = null;
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === id
+          ? {
+              ...m,
+              text: t || m.text,
+              visibleChars: (t || m.text).length,
+              useTypewriter: false,
+              showCursor: false,
+            }
+          : m
+      )
+    );
+  }, [ensureRealtimeBruceRow]);
+
   const { voiceSessionLive, pulseOpacity, toggleVoiceSession } =
     useRealtimeVoiceSession({
       socketConnected: connected,
       appendBriefingLine,
+      onRealtimeTranscript: (evt) => {
+        if (evt.role === 'tyler') {
+          if (evt.done && evt.transcript) {
+            appendBriefingLine('tyler', evt.transcript);
+          }
+          return;
+        }
+
+        // Bruce stream typing: delta -> append to same row; done -> finalize immediately.
+        if (!evt.done) {
+          if (evt.delta) appendBruceDelta(evt.delta);
+          return;
+        }
+        finalizeBruceTranscript(evt.transcript || '');
+      },
     });
 
   const onSend = useCallback(async () => {
@@ -236,6 +326,8 @@ export default function Index() {
                 m.role === 'bruce' && m.useTypewriter
                   ? m.text.slice(0, m.visibleChars)
                   : m.text;
+              const cursor =
+                m.role === 'bruce' && m.showCursor && cursorOn ? '_' : '';
               return (
                 <Text
                   key={m.id}
@@ -244,6 +336,7 @@ export default function Index() {
                   }
                 >
                   {display}
+                  {cursor}
                 </Text>
               );
             })}
