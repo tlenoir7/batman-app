@@ -2,7 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Animated,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -39,6 +41,7 @@ export default function Index() {
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<BriefRow[]>([]);
   const [sending, setSending] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const firstConnectHandledRef = useRef(false);
   const streamingBruceIdRef = useRef<string | null>(null);
@@ -325,103 +328,13 @@ export default function Index() {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.headerBar}>
           <View style={styles.headerRow}>
-            <Text style={styles.headerLabel} allowFontScaling={false}>
-              BATMAN-CONSCIOUSNESS
-            </Text>
-            <View style={styles.headerRight}>
-              <Pressable
-                onPress={() => router.push('./caseboard')}
-                style={({ pressed }) => [
-                  styles.boardBtn,
-                  pressed && styles.boardBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Open case board"
-              >
-                <Ionicons
-                  name="grid-outline"
-                  size={20}
-                  color={Colors.accent}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('./profiles')}
-                style={({ pressed }) => [
-                  styles.boardBtn,
-                  pressed && styles.boardBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Open profiles board"
-              >
-                <Ionicons
-                  name="person-outline"
-                  size={20}
-                  color={Colors.accent}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('./forensic')}
-                style={({ pressed }) => [
-                  styles.boardBtn,
-                  pressed && styles.boardBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Open forensic camera"
-              >
-                <Ionicons
-                  name="camera-outline"
-                  size={20}
-                  color={Colors.accent}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('./arsenal')}
-                style={({ pressed }) => [
-                  styles.boardBtn,
-                  pressed && styles.boardBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Open arsenal"
-              >
-                <Ionicons
-                  name="construct-outline"
-                  size={20}
-                  color={Colors.accent}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('./contingencies')}
-                style={({ pressed }) => [
-                  styles.boardBtn,
-                  pressed && styles.boardBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Open contingencies"
-              >
-                <Ionicons
-                  name="shield-outline"
-                  size={20}
-                  color={Colors.accent}
-                />
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('./voicenote')}
-                style={({ pressed }) => [
-                  styles.boardBtn,
-                  pressed && styles.boardBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Open voice note"
-              >
-                <Ionicons
-                  name="mic-circle-outline"
-                  size={20}
-                  color="#2d4a8a"
-                />
-              </Pressable>
+            <View style={styles.headerLeft}>
+              <Text style={styles.headerLabel} allowFontScaling={false}>
+                BATMAN-CONSCIOUSNESS
+              </Text>
               <View style={styles.statusWrap}>
                 {voiceSessionLive ? (
-                  <View
+                  <Animated.View
                     style={[
                       styles.statusDot,
                       {
@@ -444,8 +357,81 @@ export default function Index() {
                 )}
               </View>
             </View>
+            <Pressable
+              onPress={() => setMenuOpen(true)}
+              style={({ pressed }) => [
+                styles.menuBtn,
+                pressed && styles.menuBtnPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Open navigation menu"
+            >
+              <Ionicons
+                name="ellipsis-vertical"
+                size={22}
+                color={Colors.accent}
+              />
+            </Pressable>
           </View>
         </View>
+
+        <Modal
+          visible={menuOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setMenuOpen(false)}
+        >
+          <View style={styles.menuModalRoot}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setMenuOpen(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss menu"
+            />
+            <View style={styles.menuModalCenter} pointerEvents="box-none">
+              <View style={styles.menuPanel} pointerEvents="auto">
+                {(
+                  [
+                    { label: 'CASE BOARD', path: './caseboard' as const },
+                    { label: 'PROFILES', path: './profiles' as const },
+                    { label: 'ARSENAL', path: './arsenal' as const },
+                    { label: 'CONTINGENCIES', path: './contingencies' as const },
+                    { label: 'FORENSIC', path: './forensic' as const },
+                    { label: 'VOICE NOTE', path: './voicenote' as const },
+                  ] as const
+                ).map((item, i, arr) => (
+                  <Pressable
+                    key={item.path}
+                    onPress={() => {
+                      setMenuOpen(false);
+                      router.push(item.path);
+                    }}
+                    style={({ pressed }) => [
+                      styles.menuItem,
+                      i < arr.length - 1 && styles.menuItemDivider,
+                      pressed && styles.menuItemPressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={item.label}
+                  >
+                    <Text style={styles.menuItemText}>{item.label}</Text>
+                  </Pressable>
+                ))}
+                <Pressable
+                  onPress={() => setMenuOpen(false)}
+                  style={({ pressed }) => [
+                    styles.menuCancel,
+                    pressed && styles.menuItemPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cancel"
+                >
+                  <Text style={styles.menuCancelText}>CANCEL</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         <KeyboardAvoidingView
           style={styles.flex}
@@ -557,29 +543,72 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    minWidth: 0,
+    marginRight: 12,
+  },
   headerLabel: {
     fontSize: 10,
     letterSpacing: 2,
     textTransform: 'uppercase',
     color: Colors.accent,
     fontVariant: ['small-caps'],
+    flexShrink: 1,
   },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  boardBtn: {
-    width: 36,
-    height: 36,
+  menuBtn: {
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 4,
   },
-  boardBtnPressed: {
+  menuBtnPressed: {
     opacity: 0.65,
   },
   statusWrap: {
-    paddingLeft: 4,
+    marginLeft: 10,
+  },
+  menuModalRoot: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  menuModalCenter: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'stretch',
+    paddingHorizontal: 24,
+  },
+  menuPanel: {
+    backgroundColor: Colors.inputBackground,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  menuItem: {
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+  },
+  menuItemDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+  },
+  menuItemPressed: {
+    opacity: 0.75,
+  },
+  menuItemText: {
+    fontSize: 16,
+    color: Colors.textPrimary,
+  },
+  menuCancel: {
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+  },
+  menuCancelText: {
+    fontSize: 16,
+    color: Colors.textSecondary,
   },
   statusDot: {
     width: 6,
