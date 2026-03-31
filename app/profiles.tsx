@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -13,7 +14,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors } from '../constants/colors';
-import { createProfile, fetchProfiles, type ProfileRow } from '../services/api';
+import {
+  createProfile,
+  deleteProfilePermanent,
+  fetchProfiles,
+  terminateProfile,
+  type ProfileRow,
+} from '../services/api';
 
 export default function ProfilesScreen() {
   const [loading, setLoading] = useState(true);
@@ -57,6 +64,72 @@ export default function ProfilesScreen() {
 
   const showEmpty = !loading && profiles.length === 0;
 
+  const isTerminated = useCallback((p: ProfileRow) => {
+    const metaStatus = String(p.metadata?.status ?? p.status ?? '').toLowerCase();
+    return metaStatus === 'terminated' || metaStatus === 'closed' || metaStatus === 'archived';
+  }, []);
+
+  const sortedProfiles = useMemo(() => {
+    const active: ProfileRow[] = [];
+    const inactive: ProfileRow[] = [];
+    for (const p of profiles) {
+      (isTerminated(p) ? inactive : active).push(p);
+    }
+    return [...active, ...inactive];
+  }, [profiles, isTerminated]);
+
+  const confirmProfileActions = useCallback(
+    (p: ProfileRow) => {
+      Alert.alert(p.name || p.profile_id, undefined, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'TERMINATE',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await terminateProfile(p.profile_id);
+            if (ok) {
+              setProfiles((prev) =>
+                prev.map((x) =>
+                  x.profile_id === p.profile_id
+                    ? {
+                        ...x,
+                        status: 'terminated',
+                        metadata: { ...(x.metadata ?? {}), status: 'terminated' },
+                      }
+                    : x
+                )
+              );
+            }
+            await load();
+          },
+        },
+        {
+          text: 'DELETE',
+          style: 'destructive',
+          onPress: async () => {
+            Alert.alert('This cannot be undone.', undefined, [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'DELETE',
+                style: 'destructive',
+                onPress: async () => {
+                  const ok = await deleteProfilePermanent(p.profile_id);
+                  if (ok) {
+                    setProfiles((prev) =>
+                      prev.filter((x) => x.profile_id !== p.profile_id)
+                    );
+                  }
+                  await load();
+                },
+              },
+            ]);
+          },
+        },
+      ]);
+    },
+    [load]
+  );
+
   return (
     <View style={styles.root}>
       <Stack.Screen
@@ -90,7 +163,9 @@ export default function ProfilesScreen() {
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            {profiles.map((p, i) => (
+            {sortedProfiles.map((p, i) => {
+              const terminated = isTerminated(p);
+              return (
               <Pressable
                 key={`${p.profile_id}-${i}`}
                 onPress={() =>
@@ -99,10 +174,16 @@ export default function ProfilesScreen() {
                     params: { profile_id: p.profile_id },
                   })
                 }
+                onLongPress={() => confirmProfileActions(p)}
                 style={styles.card}
                 accessibilityRole="button"
                 accessibilityLabel={`Open ${p.name}`}
               >
+                {terminated ? (
+                  <View pointerEvents="none" style={styles.terminatedStampWrap}>
+                    <Text style={styles.terminatedStamp}>TERMINATED</Text>
+                  </View>
+                ) : null}
                 <Text style={styles.name}>{p.name}</Text>
                 <Text style={styles.role} allowFontScaling={false}>
                   {String(p.role || 'UNKNOWN')}
@@ -112,7 +193,8 @@ export default function ProfilesScreen() {
                 </Text>
                 <Text style={styles.lastUpdated}>{p.last_updated || '—'}</Text>
               </Pressable>
-            ))}
+              );
+            })}
           </ScrollView>
         )}
       </SafeAreaView>
@@ -211,6 +293,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 14,
+    overflow: 'hidden',
+  },
+  terminatedStampWrap: {
+    position: 'absolute',
+    top: 18,
+    left: -40,
+    width: 220,
+    alignItems: 'center',
+    transform: [{ rotate: '-20deg' }],
+    opacity: 0.85,
+  },
+  terminatedStamp: {
+    fontSize: 16,
+    color: Colors.alert,
+    fontWeight: '700',
+    letterSpacing: 1,
   },
   name: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary, marginBottom: 6 },
   role: {

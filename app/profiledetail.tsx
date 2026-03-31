@@ -1,10 +1,16 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '../constants/colors';
-import { getProfile, requestProfileAnalysis, type ProfileRow } from '../services/api';
+import {
+  deleteProfilePermanent,
+  getProfile,
+  requestProfileAnalysis,
+  terminateProfile,
+  type ProfileRow,
+} from '../services/api';
 
 export default function ProfileDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -38,6 +44,27 @@ export default function ProfileDetailScreen() {
     if (updated) setProfile(updated);
     setRequesting(false);
   }, [profileId, requesting]);
+
+  const onTerminate = useCallback(async () => {
+    if (!profileId) return;
+    await terminateProfile(profileId);
+    router.back();
+  }, [profileId]);
+
+  const onDelete = useCallback(async () => {
+    if (!profileId) return;
+    Alert.alert('This cannot be undone.', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'DELETE',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteProfilePermanent(profileId);
+          router.back();
+        },
+      },
+    ]);
+  }, [profileId]);
 
   return (
     <View style={styles.root}>
@@ -99,6 +126,30 @@ export default function ProfileDetailScreen() {
               >
                 <Text style={styles.requestBtnText}>REQUEST ANALYSIS</Text>
               </Pressable>
+              <View style={styles.rowBtns}>
+                <Pressable
+                  onPress={() => void onTerminate()}
+                  style={({ pressed }) => [
+                    styles.secondaryBtn,
+                    pressed && styles.requestBtnPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Terminate profile"
+                >
+                  <Text style={styles.secondaryBtnText}>TERMINATE</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void onDelete()}
+                  style={({ pressed }) => [
+                    styles.secondaryBtn,
+                    pressed && styles.requestBtnPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete profile permanently"
+                >
+                  <Text style={styles.dangerBtnText}>DELETE</Text>
+                </Pressable>
+              </View>
             </View>
           </>
         ) : (
@@ -167,6 +218,33 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     color: Colors.accent,
+    fontWeight: '700',
+  },
+  rowBtns: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 10,
+  },
+  secondaryBtn: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  secondaryBtnText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+    fontWeight: '700',
+  },
+  dangerBtnText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.alert,
     fontWeight: '700',
   },
 });

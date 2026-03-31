@@ -104,12 +104,24 @@ export async function closeCase(caseId: string): Promise<boolean> {
   }
 }
 
+export async function deleteCasePermanent(caseId: string): Promise<boolean> {
+  const cid = encodeURIComponent(String(caseId || '').trim());
+  if (!cid) return false;
+  try {
+    const res = await fetch(joinUrl(`/api/cases/${cid}/permanent`), { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export type ProfileRow = {
   profile_id: string;
   name: string;
   role: string;
   summary: string;
   last_updated: string;
+  status?: string;
   bruce_analysis?: string;
   notes?: string;
   metadata?: Record<string, unknown>;
@@ -200,6 +212,32 @@ export async function requestProfileAnalysis(profileId: string): Promise<Profile
     return row;
   } catch {
     return null;
+  }
+}
+
+export async function terminateProfile(profileId: string): Promise<boolean> {
+  const pid = encodeURIComponent(String(profileId || '').trim());
+  if (!pid) return false;
+  try {
+    const { ok } = await apiFetch<unknown>(`/api/profiles/${pid}/terminate`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteProfilePermanent(profileId: string): Promise<boolean> {
+  const pid = encodeURIComponent(String(profileId || '').trim());
+  if (!pid) return false;
+  try {
+    const res = await fetch(joinUrl(`/api/profiles/${pid}/permanent`), { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 

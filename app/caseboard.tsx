@@ -14,7 +14,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Colors } from '../constants/colors';
-import { closeCase, createCase, type CaseBoardRow, fetchActiveCases } from '../services/api';
+import {
+  closeCase,
+  createCase,
+  deleteCasePermanent,
+  type CaseBoardRow,
+  fetchActiveCases,
+} from '../services/api';
 
 function statusDotColor(status: string): string {
   const s = status.toLowerCase();
@@ -76,16 +82,36 @@ export default function CaseBoardScreen() {
     await load();
   }, [newTitle, newSummary, creating, load]);
 
-  const confirmClose = useCallback(
+  const confirmActions = useCallback(
     (row: CaseBoardRow) => {
-      Alert.alert('Close this case?', undefined, [
+      Alert.alert(row.case_id, undefined, [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm',
+          text: 'TERMINATE',
           style: 'destructive',
           onPress: async () => {
             await closeCase(row.case_id);
             await load();
+          },
+        },
+        {
+          text: 'DELETE',
+          style: 'destructive',
+          onPress: async () => {
+            Alert.alert('This cannot be undone.', undefined, [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'DELETE',
+                style: 'destructive',
+                onPress: async () => {
+                  const ok = await deleteCasePermanent(row.case_id);
+                  if (ok) {
+                    setCases((prev) => prev.filter((c) => c.case_id !== row.case_id));
+                  }
+                  await load();
+                },
+              },
+            ]);
           },
         },
       ]);
@@ -135,7 +161,7 @@ export default function CaseBoardScreen() {
                       params: { case: encodeURIComponent(JSON.stringify(c)) },
                     })
                   }
-                  onLongPress={() => confirmClose(c)}
+                  onLongPress={() => confirmActions(c)}
                   style={styles.card}
                   accessibilityRole="button"
                   accessibilityLabel={`Open ${c.case_id}`}

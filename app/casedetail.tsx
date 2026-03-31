@@ -1,10 +1,10 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useMemo } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '../constants/colors';
-import type { CaseBoardRow } from '../services/api';
+import { closeCase, deleteCasePermanent, type CaseBoardRow } from '../services/api';
 
 function parseCaseParam(raw: unknown): CaseBoardRow | null {
   if (typeof raw !== 'string' || !raw) return null;
@@ -21,6 +21,7 @@ function parseCaseParam(raw: unknown): CaseBoardRow | null {
 }
 
 export default function CaseDetailScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const row = useMemo(() => parseCaseParam(params.case), [params.case]);
 
@@ -32,6 +33,27 @@ export default function CaseDetailScreen() {
       return String(row.metadata);
     }
   }, [row?.metadata]);
+
+  const onTerminate = useCallback(async () => {
+    if (!row) return;
+    await closeCase(row.case_id);
+    router.back();
+  }, [row]);
+
+  const onDelete = useCallback(async () => {
+    if (!row) return;
+    Alert.alert('This cannot be undone.', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'DELETE',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteCasePermanent(row.case_id);
+          router.back();
+        },
+      },
+    ]);
+  }, [row]);
 
   return (
     <View style={styles.root}>
@@ -82,6 +104,32 @@ export default function CaseDetailScreen() {
             </View>
           )}
         </ScrollView>
+
+        {row ? (
+          <View
+            style={[
+              styles.bottomBar,
+              { paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+          >
+            <Pressable
+              onPress={() => void onTerminate()}
+              style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Terminate case"
+            >
+              <Text style={styles.actionAccent}>TERMINATE</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void onDelete()}
+              style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
+              accessibilityRole="button"
+              accessibilityLabel="Delete case permanently"
+            >
+              <Text style={styles.actionDanger}>DELETE</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </SafeAreaView>
     </View>
   );
@@ -165,6 +213,39 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  bottomBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    backgroundColor: Colors.background,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  actionBtn: {
+    flex: 1,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  pressed: { opacity: 0.75 },
+  actionAccent: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+    fontWeight: '700',
+  },
+  actionDanger: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.alert,
+    fontWeight: '700',
   },
 });
 

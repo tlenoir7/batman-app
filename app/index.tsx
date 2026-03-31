@@ -22,7 +22,7 @@ const OPENING_DELAY_MS = 2000;
 
 type BriefRow = {
   id: string;
-  role: 'bruce' | 'tyler' | 'debug';
+  role: 'bruce' | 'tyler';
   text: string;
   visibleChars: number;
   useTypewriter: boolean;
@@ -217,24 +217,6 @@ export default function Index() {
     []
   );
 
-  const appendDebugLine = useCallback(
-    (text: string) => {
-      const t = String(text || '').trim();
-      if (!t) return;
-      setMessages((prev) => [
-        {
-          id: makeId(),
-          role: 'debug',
-          text: t,
-          visibleChars: t.length,
-          useTypewriter: false,
-        },
-        ...prev,
-      ]);
-    },
-    []
-  );
-
   const realtimeBruceIdRef = useRef<string | null>(null);
   const ensureRealtimeBruceRow = useCallback(() => {
     if (realtimeBruceIdRef.current) return realtimeBruceIdRef.current;
@@ -257,12 +239,6 @@ export default function Index() {
     useRealtimeVoiceSession({
       socketConnected: connected,
       appendBriefingLine,
-      onRealtimeStartEmitted: () => {
-        appendDebugLine('[DEBUG] realtime_start emitted');
-      },
-      onRealtimeReady: () => {
-        appendDebugLine('[DEBUG] realtime_ready received');
-      },
       onRealtimeTranscript: (evt) => {
         if (evt.role === 'tyler') {
           if (evt.done && evt.transcript) {
@@ -302,16 +278,6 @@ export default function Index() {
         );
       },
     });
-
-  const onMicPress = useCallback(() => {
-    const s = getSocket();
-    appendDebugLine(
-      `[DEBUG] mic tapped — socket connected: ${Boolean(s?.connected)} socket id: ${String(
-        s?.id ?? 'null'
-      )}`
-    );
-    toggleVoiceSession();
-  }, [appendDebugLine, toggleVoiceSession]);
 
   const onSend = useCallback(async () => {
     const raw = draft.trim();
@@ -453,11 +419,7 @@ export default function Index() {
                 <Text
                   key={m.id}
                   style={
-                    m.role === 'bruce'
-                      ? styles.textBruce
-                      : m.role === 'debug'
-                        ? styles.textDebug
-                        : styles.textTyler
+                    m.role === 'bruce' ? styles.textBruce : styles.textTyler
                   }
                 >
                   {display}
@@ -473,7 +435,7 @@ export default function Index() {
             ]}
           >
             <Pressable
-              onPress={onMicPress}
+              onPress={toggleVoiceSession}
               disabled={!connected}
               style={({ pressed }) => [
                 styles.micBtn,
@@ -597,13 +559,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
     color: Colors.textSecondary,
-    textAlign: 'left',
-    marginBottom: 14,
-  },
-  textDebug: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: Colors.alert,
     textAlign: 'left',
     marginBottom: 14,
   },
