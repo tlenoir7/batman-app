@@ -32,6 +32,8 @@ export type UseRealtimeVoiceOptions = {
     delta?: string;
     transcript?: string;
   }) => void;
+  onRealtimeReady?: () => void;
+  onRealtimeStartEmitted?: () => void;
 };
 
 /** expo-audio: 24 kHz mono PCM16 WAV for Realtime `realtime_audio_chunk` (SDK 55; same as angel-app). */
@@ -142,13 +144,25 @@ function arrayBufferToBase64(buffer: ArrayBufferLike): string {
 }
 
 export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
-  const { socketConnected, appendBriefingLine, onRealtimeTranscript } = options;
+  const {
+    socketConnected,
+    appendBriefingLine,
+    onRealtimeTranscript,
+    onRealtimeReady,
+    onRealtimeStartEmitted,
+  } = options;
 
   const appendRef = useRef(appendBriefingLine);
   appendRef.current = appendBriefingLine;
 
   const transcriptRef = useRef(onRealtimeTranscript);
   transcriptRef.current = onRealtimeTranscript;
+
+  const onReadyRef = useRef(onRealtimeReady);
+  onReadyRef.current = onRealtimeReady;
+
+  const onStartEmittedRef = useRef(onRealtimeStartEmitted);
+  onStartEmittedRef.current = onRealtimeStartEmitted;
 
   const [sessionActive, setSessionActive] = useState(false);
   const [realtimeReady, setRealtimeReady] = useState(false);
@@ -459,6 +473,7 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
         connected: s.connected,
         voice: REALTIME_VOICE,
       });
+      onStartEmittedRef.current?.();
       s.emit('realtime_start', { voice: REALTIME_VOICE });
     } else if (was && !now) {
       if (realtimePlaybackFallbackTimerRef.current) {
@@ -499,6 +514,7 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
 
     const onRealtimeReady = () => {
       setRealtimeReady(true);
+      onReadyRef.current?.();
     };
 
     const onRealtimeAudioResponse = (payload: { audio_b64?: string }) => {
