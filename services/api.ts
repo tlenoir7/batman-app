@@ -115,6 +115,58 @@ export async function deleteCasePermanent(caseId: string): Promise<boolean> {
   }
 }
 
+/** GET /api/cases/{case_id}/timeline — case activity (newest first; CASE OPENED last). */
+export type TimelineEntryType =
+  | 'forensic'
+  | 'osint'
+  | 'profile_link'
+  | 'conversation_update'
+  | 'case_opened';
+
+export type TimelineEntry = {
+  id: string;
+  type: TimelineEntryType;
+  timestamp: string;
+  label: string;
+  summary: string;
+  full_content: string;
+};
+
+export async function fetchCaseTimeline(caseId: string): Promise<TimelineEntry[]> {
+  const cid = encodeURIComponent(String(caseId || '').trim());
+  if (!cid) return [];
+  try {
+    const res = await fetch(joinUrl(`/api/cases/${cid}/timeline`), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(data)) return [];
+    const types: TimelineEntryType[] = [
+      'forensic',
+      'osint',
+      'profile_link',
+      'conversation_update',
+      'case_opened',
+    ];
+    return data.filter((x): x is TimelineEntry => {
+      if (x == null || typeof x !== 'object') return false;
+      const o = x as Record<string, unknown>;
+      if (typeof o.id !== 'string' || typeof o.type !== 'string') return false;
+      if (!types.includes(o.type as TimelineEntryType)) return false;
+      return (
+        typeof o.timestamp === 'string' &&
+        typeof o.label === 'string' &&
+        typeof o.summary === 'string' &&
+        typeof o.full_content === 'string'
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
 export type ProfileRow = {
   profile_id: string;
   name: string;

@@ -1,10 +1,26 @@
+import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useMemo } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '../constants/colors';
-import { closeCase, deleteCasePermanent, type CaseBoardRow } from '../services/api';
+import {
+  closeCase,
+  deleteCasePermanent,
+  fetchCaseTimeline,
+  type CaseBoardRow,
+  type TimelineEntry,
+  type TimelineEntryType,
+} from '../services/api';
 
 function parseCaseParam(raw: unknown): CaseBoardRow | null {
   if (typeof raw !== 'string' || !raw) return null;
@@ -20,10 +36,60 @@ function parseCaseParam(raw: unknown): CaseBoardRow | null {
   }
 }
 
+function iconForTimelineType(t: TimelineEntryType): keyof typeof Ionicons.glyphMap {
+  switch (t) {
+    case 'forensic':
+      return 'attach-outline';
+    case 'osint':
+      return 'search-outline';
+    case 'profile_link':
+      return 'person-outline';
+    case 'conversation_update':
+      return 'chatbubble-outline';
+    case 'case_opened':
+      return 'folder-outline';
+    default:
+      return 'ellipse-outline';
+  }
+}
+
+function formatTimelineTimestamp(raw: string): string {
+  const s = String(raw || '').trim();
+  if (!s) return '—';
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+  }
+  return s;
+}
+
 export default function CaseDetailScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const row = useMemo(() => parseCaseParam(params.case), [params.case]);
+
+  const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<TimelineEntry | null>(null);
+
+  useEffect(() => {
+    if (!row?.case_id) {
+      setTimeline([]);
+      return;
+    }
+    let cancelled = false;
+    setTimelineLoading(true);
+    void fetchCaseTimeline(row.case_id)
+      .then((rows) => {
+        if (!cancelled) setTimeline(rows);
+      })
+      .finally(() => {
+        if (!cancelled) setTimelineLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [row?.case_id]);
 
   const metaJson = useMemo(() => {
     if (!row?.metadata) return '';
@@ -89,6 +155,47 @@ export default function CaseDetailScreen() {
                 SUMMARY
               </Text>
               <Text style={styles.body}>{row.summary || '—'}</Text>
+
+              <Text style={styles.sectionLabel} allowFontScaling={false}>
+                TIMELINE
+              </Text>
+              {timelineLoading ? (
+                <Text style={styles.timelineEmpty}>Loading…</Text>
+              ) : timeline.length === 0 ? (
+                <Text style={styles.timelineEmpty}>No activity yet.</Text>
+              ) : (
+                timeline.map((entry, index) => (
+                  <Pressable
+                    key={entry.id}
+                    onPress={() => setSelectedEntry(entry)}
+                    style={[
+                      styles.timelineRow,
+                      index < timeline.length - 1 && styles.timelineRowDivider,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${entry.label}. ${entry.summary}`}
+                  >
+                    <Ionicons
+                      name={iconForTimelineType(entry.type)}
+                      size={20}
+                      color="#2d4a8a"
+                      style={styles.timelineIcon}
+                    />
+                    <View style={styles.timelineCol}>
+                      <Text style={styles.timelineTs} allowFontScaling={false}>
+                        {formatTimelineTimestamp(entry.timestamp)}
+                      </Text>
+                      <Text style={styles.timelineLabel} allowFontScaling={false}>
+                        {entry.label}
+                      </Text>
+                      <Text style={styles.timelineSummary} numberOfLines={3}>
+                        {entry.summary || '—'}
+                      </Text>
+                    </View>
+                  </Pressable>
+                ))
+              )}
+
               <Text style={styles.sectionLabel} allowFontScaling={false}>
                 CONTENT
               </Text>
@@ -131,6 +238,57 @@ export default function CaseDetailScreen() {
           </View>
         ) : null}
       </SafeAreaView>
+
+      <Modal
+        visible={selectedEntry != null}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setSelectedEntry(null)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setSelectedEntry(null)}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        >
+          <Pressable
+            style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom, 20) }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {selectedEntry ? (
+              <>
+                <View style={styles.modalHeader}>
+                  <Ionicons
+                    name={iconForTimelineType(selectedEntry.type)}
+                    size={22}
+                    color="#2d4a8a"
+                  />
+                  <Text style={styles.modalLabel} allowFontScaling={false}>
+                    {selectedEntry.label}
+                  </Text>
+                </View>
+                <Text style={styles.modalTs} allowFontScaling={false}>
+                  {formatTimelineTimestamp(selectedEntry.timestamp)}
+                </Text>
+                <ScrollView
+                  style={styles.modalScroll}
+                  showsVerticalScrollIndicator
+                  nestedScrollEnabled
+                >
+                  <Text style={styles.modalBody}>{selectedEntry.full_content || '—'}</Text>
+                </ScrollView>
+                <Pressable
+                  onPress={() => setSelectedEntry(null)}
+                  style={({ pressed }) => [styles.modalClose, pressed && styles.pressed]}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.modalCloseText}>CLOSE</Text>
+                </Pressable>
+              </>
+            ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -203,6 +361,95 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     fontFamily: undefined,
   },
+  timelineEmpty: {
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  timelineRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 12,
+  },
+  timelineRowDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f2937',
+  },
+  timelineIcon: {
+    marginRight: 12,
+    marginTop: 2,
+  },
+  timelineCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  timelineTs: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  timelineLabel: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#2d4a8a',
+    marginBottom: 6,
+  },
+  timelineSummary: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#e8e8e8',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    padding: 16,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  modalLabel: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#2d4a8a',
+    flex: 1,
+  },
+  modalTs: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 12,
+  },
+  modalScroll: {
+    maxHeight: 320,
+  },
+  modalBody: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#e8e8e8',
+  },
+  modalClose: {
+    marginTop: 16,
+    alignSelf: 'flex-end',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  modalCloseText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    color: Colors.accent,
+    fontWeight: '700',
+  },
   emptyWrap: {
     flex: 1,
     justifyContent: 'center',
@@ -248,4 +495,3 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
-
