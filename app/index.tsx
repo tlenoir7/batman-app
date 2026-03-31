@@ -374,6 +374,21 @@ export default function Index() {
                   color={Colors.accent}
                 />
               </Pressable>
+              <Pressable
+                onPress={() => router.push('./arsenal')}
+                style={({ pressed }) => [
+                  styles.boardBtn,
+                  pressed && styles.boardBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Open arsenal"
+              >
+                <Ionicons
+                  name="construct-outline"
+                  size={20}
+                  color={Colors.accent}
+                />
+              </Pressable>
               <View style={styles.statusWrap}>
                 {voiceSessionLive ? (
                   <View

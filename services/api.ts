@@ -303,6 +303,188 @@ export async function attachToCase(payload: {
   }
 }
 
+export type SuitStatus = {
+  status: 'active' | 'dormant' | 'critical' | string;
+  current_priority: string;
+  trl_systems: Record<string, number>;
+  bruce_briefing?: string;
+  priorities?: string[];
+  blockers?: string[];
+  notes?: string;
+};
+
+export type GadgetStatus = 'concept' | 'in_development' | 'field_ready' | 'retired' | string;
+
+export type GadgetRow = {
+  gadget_id: string;
+  name: string;
+  status: GadgetStatus;
+  trl: number;
+  description: string;
+  build_notes?: string;
+  materials?: string;
+  bruce_briefing?: string;
+  last_updated?: string;
+};
+
+export async function fetchSuitStatus(): Promise<SuitStatus | null> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/suit', { method: 'GET' });
+    if (!ok || !data || typeof data !== 'object') return null;
+    return data as SuitStatus;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestSuitAssessment(): Promise<SuitStatus | null> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/suit/assess', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!ok || !data || typeof data !== 'object') return null;
+    return data as SuitStatus;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateSuitNotes(notes: string): Promise<boolean> {
+  try {
+    const { ok } = await apiFetch<unknown>('/api/arsenal/suit/notes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notes: String(notes ?? '') }),
+    });
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchGadgets(): Promise<GadgetRow[]> {
+  try {
+    const res = await fetch(joinUrl('/api/arsenal/gadgets'), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(data)) return [];
+    return data.filter(
+      (g): g is GadgetRow => g != null && typeof g === 'object' && typeof (g as GadgetRow).gadget_id === 'string'
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function createGadget(payload: {
+  name: string;
+  status: GadgetStatus;
+  trl: number;
+  description: string;
+}): Promise<GadgetRow | null> {
+  const name = String(payload.name || '').trim();
+  const status = String(payload.status || 'concept').trim();
+  const trl = Math.max(1, Math.min(9, Number(payload.trl || 1)));
+  const description = String(payload.description || '').trim();
+  if (!name) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/gadgets/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, status, trl, description }),
+    });
+    if (!ok || !data || typeof data !== 'object') return null;
+    return data as GadgetRow;
+  } catch {
+    return null;
+  }
+}
+
+export async function getGadget(gadgetId: string): Promise<GadgetRow | null> {
+  const gid = encodeURIComponent(String(gadgetId || '').trim());
+  if (!gid) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/arsenal/gadgets/${gid}`, { method: 'GET' });
+    if (!ok || !data || typeof data !== 'object') return null;
+    return data as GadgetRow;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestGadgetAssessment(gadgetId: string): Promise<GadgetRow | null> {
+  const gid = encodeURIComponent(String(gadgetId || '').trim());
+  if (!gid) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/arsenal/gadgets/${gid}/assess`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!ok || !data || typeof data !== 'object') return null;
+    return data as GadgetRow;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateGadget(gadgetId: string, fields: Partial<GadgetRow>): Promise<GadgetRow | null> {
+  const gid = encodeURIComponent(String(gadgetId || '').trim());
+  if (!gid) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/arsenal/gadgets/${gid}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields ?? {}),
+    });
+    if (!ok || !data || typeof data !== 'object') return null;
+    return data as GadgetRow;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteGadget(gadgetId: string): Promise<boolean> {
+  const gid = encodeURIComponent(String(gadgetId || '').trim());
+  if (!gid) return false;
+  try {
+    const res = await fetch(joinUrl(`/api/arsenal/gadgets/${gid}`), { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export type GadgetSuggestion = {
+  name: string;
+  status: GadgetStatus;
+  trl: number;
+  description: string;
+};
+
+export async function suggestGadgets(context: string): Promise<GadgetSuggestion[]> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/gadgets/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ context: String(context ?? '') }),
+    });
+    if (!ok) return [];
+    if (Array.isArray(data)) return data as GadgetSuggestion[];
+    if (data && typeof data === 'object' && Array.isArray((data as any).gadgets)) {
+      return (data as any).gadgets as GadgetSuggestion[];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export async function postBriefingMessage(payload: {
   message: string;
   first_contact?: boolean;

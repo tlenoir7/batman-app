@@ -59,6 +59,27 @@ export default function RootLayout() {
             headerBackTitle: 'Briefing',
           }}
         />
+        <Stack.Screen
+          name="arsenal"
+          options={{
+            title: 'Arsenal',
+            headerBackTitle: 'Briefing',
+          }}
+        />
+        <Stack.Screen
+          name="suitdetail"
+          options={{
+            title: 'Suit',
+            headerBackTitle: 'Arsenal',
+          }}
+        />
+        <Stack.Screen
+          name="gadgetdetail"
+          options={{
+            title: 'Gadget',
+            headerBackTitle: 'Arsenal',
+          }}
+        />
       </Stack>
     </SafeAreaProvider>
   );
