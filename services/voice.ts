@@ -184,6 +184,7 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
   const cleanupRealtimeRecordingRef = useRef<() => void>(() => {});
   const beginRealtimeStreamingRef = useRef<() => Promise<void>>(async () => {});
   const finalizeRealtimeResponsePlaybackRef = useRef<() => Promise<void>>(async () => {});
+  const detachRealtimeListenersRef = useRef<null | (() => void)>(null);
 
   useEffect(() => {
     voiceSessionActiveRef.current = sessionActive;
@@ -440,6 +441,100 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
 
   beginRealtimeStreamingRef.current = beginRealtimeStreaming;
 
+  const attachRealtimeListeners = useCallback(
+    (socket: ReturnType<typeof getSocket>) => {
+      if (!socket) return;
+      if (detachRealtimeListenersRef.current) return;
+
+      const onRealtimeReady = () => {
+        setRealtimeReady(true);
+        onReadyRef.current?.();
+      };
+
+      const onRealtimeAudioResponse = (payload: { audio_b64?: string }) => {
+        const b64 = payload?.audio_b64;
+        if (typeof b64 === 'string' && b64.length) {
+          realtimeResponsePcmRef.current.push(b64);
+        }
+      };
+
+      const onRealtimeAudioDone = () => {
+        void mergeRealtimePlayback().catch((e) =>
+          console.warn('[realtime] playback failed:', (e as Error)?.message ?? e)
+        );
+      };
+
+      const onRealtimeTranscript = (p: {
+        done?: boolean;
+        transcript?: string;
+        role?: string;
+        delta?: string;
+      }) => {
+        if (!p) return;
+        const role: RealtimeBriefRole = p.role === 'assistant' ? 'bruce' : 'tyler';
+        const done = Boolean(p.done);
+        const delta = p.delta != null ? String(p.delta) : '';
+        const transcript = p.transcript != null ? String(p.transcript) : '';
+        const handler = transcriptRef.current;
+        handler?.({ role, done, delta, transcript });
+
+        // Default behavior if consumer doesn't handle streaming.
+        if (!handler) {
+          if (done) {
+            const text = transcript.trim();
+            if (!text) return;
+            appendRef.current(role, text);
+          }
+          return;
+        }
+
+        // Ensure Tyler's final transcript still lands even if handler is selective.
+        if (role === 'tyler' && done) {
+          const text = transcript.trim();
+          if (text) appendRef.current('tyler', text);
+        }
+      };
+
+      const onRealtimeError = (payload: { message?: string }) => {
+        console.warn('[realtime] error', payload);
+        try {
+          cleanupRealtimeRecordingRef.current?.();
+        } catch {
+          /* ignore */
+        }
+        setRealtimeReady(false);
+        setSessionActive(false);
+      };
+
+      const onRealtimeEnded = () => {
+        setRealtimeReady(false);
+        setSessionActive(false);
+        try {
+          cleanupRealtimeRecordingRef.current?.();
+        } catch {
+          /* ignore */
+        }
+      };
+
+      socket.on('realtime_ready', onRealtimeReady);
+      socket.on('realtime_audio_response', onRealtimeAudioResponse);
+      socket.on('realtime_audio_done', onRealtimeAudioDone);
+      socket.on('realtime_transcript', onRealtimeTranscript);
+      socket.on('realtime_error', onRealtimeError);
+      socket.on('realtime_ended', onRealtimeEnded);
+
+      detachRealtimeListenersRef.current = () => {
+        socket.off('realtime_ready', onRealtimeReady);
+        socket.off('realtime_audio_response', onRealtimeAudioResponse);
+        socket.off('realtime_audio_done', onRealtimeAudioDone);
+        socket.off('realtime_transcript', onRealtimeTranscript);
+        socket.off('realtime_error', onRealtimeError);
+        socket.off('realtime_ended', onRealtimeEnded);
+      };
+    },
+    [mergeRealtimePlayback]
+  );
+
   useEffect(() => {
     const canStream =
       sessionActive && realtimeReady && socketConnected && Boolean(getSocket()?.connected);
@@ -467,6 +562,8 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
         setSessionActive(false);
         return;
       }
+      // IMPORTANT: attach listeners BEFORE emitting realtime_start (matches angel-app ordering).
+      attachRealtimeListeners(s);
       setRealtimeReady(false);
       console.log('[realtime] emitting realtime_start', {
         socketId: s.id,
@@ -511,84 +608,7 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
     if (!socketConnected) return;
     const socket = getSocket();
     if (!socket) return;
-
-    const onRealtimeReady = () => {
-      setRealtimeReady(true);
-      onReadyRef.current?.();
-    };
-
-    const onRealtimeAudioResponse = (payload: { audio_b64?: string }) => {
-      const b64 = payload?.audio_b64;
-      if (typeof b64 === 'string' && b64.length) {
-        realtimeResponsePcmRef.current.push(b64);
-      }
-    };
-
-    const onRealtimeAudioDone = () => {
-      void mergeRealtimePlayback().catch((e) =>
-        console.warn('[realtime] playback failed:', (e as Error)?.message ?? e)
-      );
-    };
-
-    const onRealtimeTranscript = (p: {
-      done?: boolean;
-      transcript?: string;
-      role?: string;
-      delta?: string;
-    }) => {
-      if (!p) return;
-      const role: RealtimeBriefRole = p.role === 'assistant' ? 'bruce' : 'tyler';
-      const done = Boolean(p.done);
-      const delta = p.delta != null ? String(p.delta) : '';
-      const transcript = p.transcript != null ? String(p.transcript) : '';
-      const handler = transcriptRef.current;
-      handler?.({ role, done, delta, transcript });
-
-      // Default behavior if consumer doesn't handle streaming.
-      if (!handler) {
-        if (done) {
-          const text = transcript.trim();
-          if (!text) return;
-          appendRef.current(role, text);
-        }
-        return;
-      }
-
-      // Ensure Tyler's final transcript still lands even if handler is selective.
-      if (role === 'tyler' && done) {
-        const text = transcript.trim();
-        if (text) appendRef.current('tyler', text);
-      }
-    };
-
-    const onRealtimeError = (payload: { message?: string }) => {
-      console.warn('[realtime] error', payload);
-      try {
-        cleanupRealtimeRecordingRef.current?.();
-      } catch {
-        /* ignore */
-      }
-      setRealtimeReady(false);
-      setSessionActive(false);
-    };
-
-    const onRealtimeEnded = () => {
-      setRealtimeReady(false);
-      setSessionActive(false);
-      try {
-        cleanupRealtimeRecordingRef.current?.();
-      } catch {
-        /* ignore */
-      }
-    };
-
-    socket.on('realtime_ready', onRealtimeReady);
-    socket.on('realtime_audio_response', onRealtimeAudioResponse);
-    socket.on('realtime_audio_done', onRealtimeAudioDone);
-    socket.on('realtime_transcript', onRealtimeTranscript);
-    socket.on('realtime_error', onRealtimeError);
-    socket.on('realtime_ended', onRealtimeEnded);
-
+    attachRealtimeListeners(socket);
     return () => {
       if (realtimePlaybackFallbackTimerRef.current) {
         clearTimeout(realtimePlaybackFallbackTimerRef.current);
@@ -604,14 +624,10 @@ export function useRealtimeVoiceSession(options: UseRealtimeVoiceOptions) {
       if (rrec?.isRecording) {
         rrec.stop().catch(() => {});
       }
-      socket.off('realtime_ready', onRealtimeReady);
-      socket.off('realtime_audio_response', onRealtimeAudioResponse);
-      socket.off('realtime_audio_done', onRealtimeAudioDone);
-      socket.off('realtime_transcript', onRealtimeTranscript);
-      socket.off('realtime_error', onRealtimeError);
-      socket.off('realtime_ended', onRealtimeEnded);
+      detachRealtimeListenersRef.current?.();
+      detachRealtimeListenersRef.current = null;
     };
-  }, [mergeRealtimePlayback]);
+  }, [socketConnected, attachRealtimeListeners]);
 
   const toggleVoiceSession = useCallback(() => {
     setSessionActive((prev) => {
