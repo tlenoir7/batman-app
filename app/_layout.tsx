@@ -52,6 +52,13 @@ export default function RootLayout() {
             headerBackTitle: 'Profiles',
           }}
         />
+        <Stack.Screen
+          name="forensic"
+          options={{
+            title: 'Forensic',
+            headerBackTitle: 'Briefing',
+          }}
+        />
       </Stack>
     </SafeAreaProvider>
   );

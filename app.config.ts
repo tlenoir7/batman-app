@@ -39,6 +39,12 @@ const config: ExpoConfig = {
           'Batman uses the microphone for secure realtime voice.',
       },
     ],
+    [
+      'expo-camera',
+      {
+        cameraPermission: 'Batman needs camera access for forensic capture.',
+      },
+    ],
   ],
   experiments: {
     typedRoutes: true,

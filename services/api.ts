@@ -203,6 +203,68 @@ export async function requestProfileAnalysis(profileId: string): Promise<Profile
   }
 }
 
+export type VisionForensicResult = {
+  ok: boolean;
+  bruce_briefing?: string;
+  result?: unknown;
+  error?: string;
+};
+
+export async function analyzeForensicImage(payload: {
+  image_base64: string;
+  context?: string;
+  file_name?: string;
+}): Promise<VisionForensicResult | null> {
+  const image_base64 = String(payload.image_base64 || '').trim();
+  if (!image_base64) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/vision/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image_base64,
+        context: payload.context ?? '',
+        file_name: payload.file_name ?? 'photo.jpg',
+      }),
+    });
+    if (!data || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    return {
+      ok: ok && Boolean(d.ok ?? true),
+      bruce_briefing:
+        typeof d.bruce_briefing === 'string' ? d.bruce_briefing : undefined,
+      result: d.result,
+      error: typeof d.error === 'string' ? d.error : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function attachToCase(payload: {
+  case_id: string;
+  attachment_type: string;
+  content?: unknown;
+  metadata?: Record<string, unknown>;
+}): Promise<boolean> {
+  const cid = encodeURIComponent(String(payload.case_id || '').trim());
+  if (!cid) return false;
+  try {
+    const { ok } = await apiFetch<unknown>(`/api/cases/${cid}/attachments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        attachment_type: payload.attachment_type,
+        content: payload.content ?? null,
+        metadata: payload.metadata ?? {},
+      }),
+    });
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function postBriefingMessage(payload: {
   message: string;
   first_contact?: boolean;

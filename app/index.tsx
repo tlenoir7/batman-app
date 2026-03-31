@@ -282,6 +282,21 @@ export default function Index() {
                   color={Colors.accent}
                 />
               </Pressable>
+              <Pressable
+                onPress={() => router.push('./forensic')}
+                style={({ pressed }) => [
+                  styles.boardBtn,
+                  pressed && styles.boardBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Open forensic camera"
+              >
+                <Ionicons
+                  name="camera-outline"
+                  size={20}
+                  color={Colors.accent}
+                />
+              </Pressable>
               <View style={styles.statusWrap}>
                 {voiceSessionLive ? (
                   <Animated.View
