@@ -17,7 +17,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { Colors } from '../constants/colors';
 import { postBriefingMessage } from '../services/api';
-import { getSocket, subscribeSocketConnection } from '../services/socket';
+import { connectSocket, getSocket, subscribeSocketConnection } from '../services/socket';
 import { useRealtimeVoiceSession } from '../services/voice';
 
 const OPENING_DELAY_MS = 2000;
@@ -48,6 +48,8 @@ export default function Index() {
   const streamingBruceTextRef = useRef<string>('');
 
   useEffect(() => {
+    // Ensure the shared client exists before subscribing (same instance as _layout connectSocket).
+    connectSocket();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsub = subscribeSocketConnection((isConnected) => {
       setConnected(isConnected);

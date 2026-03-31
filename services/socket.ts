@@ -16,10 +16,17 @@ function notifyConnection(connected: boolean): void {
   });
 }
 
+/** Re-read socket.connected and broadcast (handles races where `connect` fired before listeners existed). */
+function syncConnectionFromSocket(): void {
+  notifyConnection(socket?.connected ?? false);
+}
+
 /** Subscribe to live Socket.IO connection state (angel-style client, app-level observers). */
 export function subscribeSocketConnection(listener: ConnListener): () => void {
   connListeners.add(listener);
   listener(socket?.connected ?? false);
+  // Handshake may complete in the same turn or before this subscriber was registered.
+  queueMicrotask(() => listener(socket?.connected ?? false));
   return () => connListeners.delete(listener);
 }
 
@@ -33,6 +40,15 @@ function onReconnectAttempt(n: number) {
 
 function onReconnectOk(n: number) {
   console.log('[batman-socket] reconnect OK', { attempts: n });
+}
+
+function onManagerReconnect(n: number) {
+  onReconnectOk(n);
+  syncConnectionFromSocket();
+}
+
+function onEngineOpen() {
+  syncConnectionFromSocket();
 }
 
 function onReconnectError(err: Error) {
@@ -56,6 +72,7 @@ function attachSocketListeners(s: Socket): void {
   handlers = {
     onConnect: () => {
       const transport = s.io.engine?.transport?.name ?? 'unknown';
+      console.log('[socket] connected', s.id);
       console.log('[batman-socket] connected', {
         id: s.id,
         connected: s.connected,
@@ -87,9 +104,12 @@ function attachSocketListeners(s: Socket): void {
 
   const mgr = s.io;
   mgr.on('reconnect_attempt', onReconnectAttempt);
-  mgr.on('reconnect', onReconnectOk);
+  mgr.on('reconnect', onManagerReconnect);
   mgr.on('reconnect_error', onReconnectError);
   mgr.on('reconnect_failed', onReconnectFailed);
+
+  // Engine opened: reflect connected state even if Socket `connect` was missed (e.g. listener timing).
+  mgr.engine?.on('open', onEngineOpen);
 }
 
 function detachSocketListeners(s: Socket): void {
@@ -100,9 +120,10 @@ function detachSocketListeners(s: Socket): void {
   }
   const mgr = s.io;
   mgr.off('reconnect_attempt', onReconnectAttempt);
-  mgr.off('reconnect', onReconnectOk);
+  mgr.off('reconnect', onManagerReconnect);
   mgr.off('reconnect_error', onReconnectError);
   mgr.off('reconnect_failed', onReconnectFailed);
+  mgr.engine?.off('open', onEngineOpen);
 }
 
 export function getSocket(): Socket | null {
@@ -114,11 +135,14 @@ export function getSocket(): Socket | null {
  */
 export function connectSocket(): Socket | null {
   if (socket?.connected) {
+    syncConnectionFromSocket();
+    queueMicrotask(() => syncConnectionFromSocket());
     return socket;
   }
 
   if (socket) {
     socket.connect();
+    queueMicrotask(() => syncConnectionFromSocket());
     return socket;
   }
 
@@ -139,6 +163,10 @@ export function connectSocket(): Socket | null {
   });
 
   attachSocketListeners(socket);
+
+  // If the handshake already finished synchronously or before UI subscribed, push current state.
+  syncConnectionFromSocket();
+  queueMicrotask(() => syncConnectionFromSocket());
 
   return socket;
 }
