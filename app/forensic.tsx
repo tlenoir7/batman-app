@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   Image,
 } from 'react-native';
@@ -22,10 +23,57 @@ import {
 } from '../services/api';
 
 type Mode = 'camera' | 'preview' | 'analysis' | 'result';
+type AnalysisMode = 'scan' | 'full';
+
+type ForensicParsed = {
+  type: string;
+  confidence: string;
+  mission: string;
+  summary: string;
+  keyFindings: string[];
+  anomalies: string[];
+  recommendedAction: string;
+  bruceRead: string;
+};
 
 function isInactiveCaseStatus(status: string): boolean {
   const s = status.toLowerCase();
   return s === 'closed' || s === 'terminated' || s === 'archived';
+}
+
+function asString(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  return String(v);
+}
+
+function asStringList(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => asString(x)).filter((s) => s.trim());
+  return [];
+}
+
+function parseForensicResponse(payload: {
+  result?: unknown;
+  bruce_briefing?: string;
+}): ForensicParsed {
+  const r = payload.result;
+  const o = r && typeof r === 'object' ? (r as Record<string, unknown>) : {};
+  const classification = o.classification;
+  const cls =
+    classification && typeof classification === 'object'
+      ? (classification as Record<string, unknown>)
+      : {};
+
+  return {
+    type: asString(cls.primary_type || o.primary_type || '').trim() || '—',
+    confidence: asString(o.confidence || '').trim() || '—',
+    mission: asString(o.mission_relevance || '').trim() || '—',
+    summary: asString(o.summary || '').trim() || '—',
+    keyFindings: asStringList(o.key_findings),
+    anomalies: asStringList(o.anomalies),
+    bruceRead: asString(payload.bruce_briefing || '').trim() || '—',
+    recommendedAction: asString(o.recommended_action || '').trim() || '—',
+  };
 }
 
 export default function ForensicScreen() {
@@ -35,11 +83,13 @@ export default function ForensicScreen() {
   const [flash, setFlash] = useState<FlashMode>('off');
 
   const [mode, setMode] = useState<Mode>('camera');
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('full');
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [capturedB64, setCapturedB64] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [briefing, setBriefing] = useState('');
+  const [contextText, setContextText] = useState('');
+  const [report, setReport] = useState<ForensicParsed | null>(null);
 
   const [filed, setFiled] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -58,7 +108,8 @@ export default function ForensicScreen() {
     setMode('camera');
     setCapturedUri(null);
     setCapturedB64(null);
-    setBriefing('');
+    setContextText('');
+    setReport(null);
     setFiled(false);
     setAttachOpen(false);
   }, []);
@@ -80,7 +131,8 @@ export default function ForensicScreen() {
   const onRetake = useCallback(() => {
     setCapturedUri(null);
     setCapturedB64(null);
-    setBriefing('');
+    setContextText('');
+    setReport(null);
     setFiled(false);
     setMode('camera');
   }, []);
@@ -89,18 +141,24 @@ export default function ForensicScreen() {
     if (!capturedB64 || loading) return;
     setLoading(true);
     setMode('analysis');
-    setBriefing('');
+    setReport(null);
     setFiled(false);
     const r = await analyzeForensicImage({
       image_base64: capturedB64,
       file_name: 'forensic.jpg',
-      context: '',
+      context:
+        analysisMode === 'scan'
+          ? `SCAN\n\n${contextText || ''}`.trim()
+          : `FULL ANALYSIS\n\n${contextText || ''}`.trim(),
     });
-    const txt = r?.bruce_briefing?.trim() ?? '';
-    setBriefing(txt);
+    const parsed = parseForensicResponse({
+      result: r?.result,
+      bruce_briefing: r?.bruce_briefing,
+    });
+    setReport(parsed);
     setLoading(false);
     setMode('result');
-  }, [capturedB64, loading]);
+  }, [capturedB64, loading, analysisMode, contextText]);
 
   const openAttach = useCallback(async () => {
     await loadCases();
@@ -113,16 +171,18 @@ export default function ForensicScreen() {
       const ok = await attachToCase({
         case_id: row.case_id,
         attachment_type: 'forensic_image',
-        content: briefing,
+        content: report?.bruceRead || '',
         metadata: {
           image_base64: capturedB64,
           file_name: 'forensic.jpg',
+          analysis_mode: analysisMode,
+          report: report ?? null,
         },
       });
       setAttachOpen(false);
       setFiled(ok);
     },
-    [capturedB64, briefing]
+    [capturedB64, report, analysisMode]
   );
 
   return (
@@ -199,39 +259,91 @@ export default function ForensicScreen() {
           </View>
         ) : mode === 'preview' ? (
           <View style={styles.flex}>
-            {capturedUri ? (
-              <Image source={{ uri: capturedUri }} style={styles.preview} />
-            ) : null}
-            <View
-              style={[
-                styles.bottomBar,
-                { paddingBottom: Math.max(insets.bottom, 12) },
-              ]}
+            <ScrollView
+              contentContainerStyle={styles.captureContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
             >
-              <Pressable
-                onPress={onRetake}
-                style={({ pressed }) => [
-                  styles.bottomBtn,
-                  pressed && styles.bottomBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Retake"
-              >
-                <Text style={styles.bottomBtnMuted}>RETAKE</Text>
-              </Pressable>
+              <View style={styles.captureCard}>
+                {capturedUri ? (
+                  <Image source={{ uri: capturedUri }} style={styles.previewCentered} />
+                ) : null}
 
-              <Pressable
-                onPress={() => void onAnalyze()}
-                style={({ pressed }) => [
-                  styles.bottomBtn,
-                  pressed && styles.bottomBtnPressed,
-                ]}
-                accessibilityRole="button"
-                accessibilityLabel="Analyze"
-              >
-                <Text style={styles.bottomBtnAccent}>ANALYZE</Text>
-              </Pressable>
-            </View>
+                <TextInput
+                  style={styles.contextInput}
+                  value={contextText}
+                  onChangeText={setContextText}
+                  placeholder="Context…"
+                  placeholderTextColor={Colors.textSecondary}
+                  multiline
+                />
+
+                <View style={styles.modeRow}>
+                  <Pressable
+                    onPress={() => setAnalysisMode('scan')}
+                    style={({ pressed }) => [
+                      styles.modeBtn,
+                      analysisMode === 'scan' && styles.modeBtnActive,
+                      pressed && styles.bottomBtnPressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Scan mode"
+                  >
+                    <Text
+                      style={[
+                        styles.modeText,
+                        analysisMode === 'scan' && styles.modeTextActive,
+                      ]}
+                    >
+                      SCAN
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setAnalysisMode('full')}
+                    style={({ pressed }) => [
+                      styles.modeBtn,
+                      analysisMode === 'full' && styles.modeBtnActive,
+                      pressed && styles.bottomBtnPressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Full analysis mode"
+                  >
+                    <Text
+                      style={[
+                        styles.modeText,
+                        analysisMode === 'full' && styles.modeTextActive,
+                      ]}
+                    >
+                      FULL ANALYSIS
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <Pressable
+                  onPress={() => void onAnalyze()}
+                  style={({ pressed }) => [
+                    styles.analyzeBtn,
+                    pressed && styles.bottomBtnPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Analyze"
+                >
+                  <Text style={styles.analyzeBtnText}>ANALYZE</Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={onRetake}
+                  style={({ pressed }) => [
+                    styles.retakeBtn,
+                    pressed && styles.bottomBtnPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Retake"
+                >
+                  <Text style={styles.bottomBtnMuted}>RETAKE</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
           </View>
         ) : mode === 'analysis' ? (
           <View style={styles.centerWrap}>
@@ -243,7 +355,57 @@ export default function ForensicScreen() {
               contentContainerStyle={styles.resultContent}
               showsVerticalScrollIndicator={false}
             >
-              <Text style={styles.bruceText}>{briefing}</Text>
+              <View style={styles.reportHeader}>
+                <Text style={styles.reportTitle} allowFontScaling={false}>
+                  FORENSIC REPORT
+                </Text>
+                <Text style={styles.metaLine}>
+                  <Text style={styles.metaLabel}>TYPE</Text>
+                  <Text style={styles.metaValue}> {report?.type ?? '—'}</Text>
+                </Text>
+                <Text style={styles.metaLine}>
+                  <Text style={styles.metaLabel}>CONFIDENCE</Text>
+                  <Text style={styles.metaValue}> {report?.confidence ?? '—'}</Text>
+                </Text>
+                <Text style={styles.metaLine}>
+                  <Text style={styles.metaLabel}>MISSION</Text>
+                  <Text style={styles.metaValue}> {report?.mission ?? '—'}</Text>
+                </Text>
+              </View>
+
+              <Text style={styles.summaryPara}>{report?.summary ?? '—'}</Text>
+
+              <Text style={styles.sectionMuted} allowFontScaling={false}>
+                KEY FINDINGS
+              </Text>
+              {(report?.keyFindings?.length ? report.keyFindings : ['—']).map((f, idx) => (
+                <Text key={`kf-${idx}`} style={styles.finding}>
+                  • {f}
+                </Text>
+              ))}
+
+              {report?.anomalies?.length ? (
+                <>
+                  <Text style={styles.sectionAlert} allowFontScaling={false}>
+                    ANOMALIES
+                  </Text>
+                  {report.anomalies.map((a, idx) => (
+                    <Text key={`an-${idx}`} style={styles.anomaly}>
+                      ⚠ {a}
+                    </Text>
+                  ))}
+                </>
+              ) : null}
+
+              <Text style={styles.sectionAccent} allowFontScaling={false}>
+                BRUCE'S READ
+              </Text>
+              <Text style={styles.bruceRead}>{report?.bruceRead ?? '—'}</Text>
+
+              <Text style={styles.recommendedAction}>
+                {report?.recommendedAction ?? '—'}
+              </Text>
+
               {filed ? <Text style={styles.filedText}>Filed.</Text> : null}
             </ScrollView>
             <View
@@ -389,13 +551,150 @@ const styles = StyleSheet.create({
   preview: { flex: 1, resizeMode: 'cover', backgroundColor: Colors.background },
   centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   centerMuted: { fontSize: 14, color: Colors.textSecondary },
-  resultContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 12 },
-  bruceText: {
-    fontSize: 16,
-    lineHeight: 26,
-    letterSpacing: 0.3,
+  captureContent: {
+    flexGrow: 1,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 24,
+    justifyContent: 'center',
+  },
+  captureCard: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 0,
+    padding: 16,
+    backgroundColor: Colors.background,
+  },
+  previewCentered: {
+    width: '100%',
+    height: 320,
+    resizeMode: 'contain',
+    backgroundColor: Colors.background,
+    marginBottom: 12,
+  },
+  contextInput: {
+    minHeight: 90,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: 0,
+    backgroundColor: Colors.inputBackground,
     color: Colors.textPrimary,
-    textAlign: 'left',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    textAlignVertical: 'top',
+    marginBottom: 12,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
+  modeBtn: {
+    flex: 1,
+    height: 40,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modeBtnActive: {
+    borderColor: Colors.accent,
+  },
+  modeText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.textSecondary,
+  },
+  modeTextActive: {
+    color: Colors.accent,
+    fontWeight: '700',
+  },
+  analyzeBtn: {
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    marginBottom: 10,
+  },
+  analyzeBtnText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+    fontWeight: '700',
+  },
+  retakeBtn: {
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+
+  resultContent: { paddingHorizontal: 20, paddingTop: 18, paddingBottom: 12 },
+  reportHeader: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.border,
+    paddingBottom: 12,
+    marginBottom: 14,
+  },
+  reportTitle: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+    marginBottom: 10,
+  },
+  metaLine: { fontSize: 12, marginBottom: 4 },
+  metaLabel: {
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+  },
+  metaValue: { fontSize: 12, color: Colors.textPrimary },
+  summaryPara: { fontSize: 15, color: Colors.textPrimary, lineHeight: 24, marginBottom: 16 },
+  sectionMuted: {
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.textSecondary,
+    marginTop: 6,
+    marginBottom: 10,
+  },
+  finding: { fontSize: 14, color: Colors.textPrimary, lineHeight: 22, marginBottom: 6 },
+  sectionAlert: {
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.alert,
+    marginTop: 14,
+    marginBottom: 10,
+  },
+  anomaly: { fontSize: 14, color: Colors.alert, lineHeight: 22, marginBottom: 6 },
+  sectionAccent: {
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+    marginTop: 16,
+    marginBottom: 10,
+  },
+  bruceRead: {
+    fontSize: 15,
+    color: Colors.textPrimary,
+    lineHeight: 24,
+    fontStyle: 'italic',
+  },
+  recommendedAction: {
+    marginTop: 16,
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    lineHeight: 22,
   },
   filedText: { marginTop: 14, fontSize: 14, color: Colors.textSecondary },
   resultActions: {
