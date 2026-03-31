@@ -167,6 +167,99 @@ export async function fetchCaseTimeline(caseId: string): Promise<TimelineEntry[]
   }
 }
 
+/** GET /api/profiles/{profile_id}/linked-cases */
+export async function fetchLinkedCases(profileId: string): Promise<CaseBoardRow[]> {
+  const pid = encodeURIComponent(String(profileId || '').trim());
+  if (!pid) return [];
+  try {
+    const res = await fetch(joinUrl(`/api/profiles/${pid}/linked-cases`), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(data)) return [];
+    return data.filter(
+      (row): row is CaseBoardRow =>
+        row != null &&
+        typeof row === 'object' &&
+        typeof (row as CaseBoardRow).case_id === 'string'
+    );
+  } catch {
+    return [];
+  }
+}
+
+export type LinkedProfileRow = {
+  profile_id: string;
+  name: string;
+  role: string;
+};
+
+/** GET /api/cases/{case_id}/linked-profiles */
+export async function fetchLinkedProfiles(caseId: string): Promise<LinkedProfileRow[]> {
+  const cid = encodeURIComponent(String(caseId || '').trim());
+  if (!cid) return [];
+  try {
+    const res = await fetch(joinUrl(`/api/cases/${cid}/linked-profiles`), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(data)) return [];
+    return data.filter(
+      (row): row is LinkedProfileRow =>
+        row != null &&
+        typeof row === 'object' &&
+        typeof (row as LinkedProfileRow).profile_id === 'string' &&
+        typeof (row as LinkedProfileRow).name === 'string' &&
+        typeof (row as LinkedProfileRow).role === 'string'
+    );
+  } catch {
+    return [];
+  }
+}
+
+/** POST /api/profiles/{profile_id}/link-case — body { case_id } */
+export async function linkProfileToCase(
+  profileId: string,
+  caseId: string
+): Promise<boolean> {
+  const pid = encodeURIComponent(String(profileId || '').trim());
+  const case_id = String(caseId || '').trim();
+  if (!pid || !case_id) return false;
+  try {
+    const { ok } = await apiFetch<{ ok?: boolean }>(`/api/profiles/${pid}/link-case`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ case_id }),
+    });
+    return Boolean(ok);
+  } catch {
+    return false;
+  }
+}
+
+/** DELETE /api/profiles/{profile_id}/link-case/{case_id} */
+export async function unlinkProfileFromCase(
+  profileId: string,
+  caseId: string
+): Promise<boolean> {
+  const pid = encodeURIComponent(String(profileId || '').trim());
+  const cid = encodeURIComponent(String(caseId || '').trim());
+  if (!pid || !cid) return false;
+  try {
+    const { ok } = await apiFetch<{ ok?: boolean }>(
+      `/api/profiles/${pid}/link-case/${cid}`,
+      { method: 'DELETE' }
+    );
+    return Boolean(ok);
+  } catch {
+    return false;
+  }
+}
+
 export type ProfileRow = {
   profile_id: string;
   name: string;

@@ -17,7 +17,13 @@ import {
   closeCase,
   deleteCasePermanent,
   fetchCaseTimeline,
+  fetchLinkedProfiles,
+  fetchProfiles,
+  linkProfileToCase,
+  unlinkProfileFromCase,
   type CaseBoardRow,
+  type LinkedProfileRow,
+  type ProfileRow,
   type TimelineEntry,
   type TimelineEntryType,
 } from '../services/api';
@@ -63,6 +69,10 @@ function formatTimelineTimestamp(raw: string): string {
   return s;
 }
 
+function roleBadgeText(role: string): string {
+  return String(role || 'UNKNOWN').trim().toUpperCase() || 'UNKNOWN';
+}
+
 export default function CaseDetailScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
@@ -71,17 +81,35 @@ export default function CaseDetailScreen() {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<TimelineEntry | null>(null);
+  const [linkedProfiles, setLinkedProfiles] = useState<LinkedProfileRow[]>([]);
+  const [linkProfileModalOpen, setLinkProfileModalOpen] = useState(false);
+  const [profilePicker, setProfilePicker] = useState<ProfileRow[]>([]);
+  const [profilePickerLoading, setProfilePickerLoading] = useState(false);
+
+  const refreshTimelineAndLinks = useCallback(async () => {
+    if (!row?.case_id) return;
+    const [tl, lp] = await Promise.all([
+      fetchCaseTimeline(row.case_id),
+      fetchLinkedProfiles(row.case_id),
+    ]);
+    setTimeline(tl);
+    setLinkedProfiles(lp);
+  }, [row?.case_id]);
 
   useEffect(() => {
     if (!row?.case_id) {
       setTimeline([]);
+      setLinkedProfiles([]);
       return;
     }
     let cancelled = false;
     setTimelineLoading(true);
-    void fetchCaseTimeline(row.case_id)
-      .then((rows) => {
-        if (!cancelled) setTimeline(rows);
+    void Promise.all([fetchCaseTimeline(row.case_id), fetchLinkedProfiles(row.case_id)])
+      .then(([tl, lp]) => {
+        if (!cancelled) {
+          setTimeline(tl);
+          setLinkedProfiles(lp);
+        }
       })
       .finally(() => {
         if (!cancelled) setTimelineLoading(false);
@@ -90,6 +118,52 @@ export default function CaseDetailScreen() {
       cancelled = true;
     };
   }, [row?.case_id]);
+
+  const openLinkProfileModal = useCallback(async () => {
+    if (!row?.case_id) return;
+    setLinkProfileModalOpen(true);
+    setProfilePickerLoading(true);
+    const rows = await fetchProfiles();
+    setProfilePicker(rows);
+    setProfilePickerLoading(false);
+  }, [row?.case_id]);
+
+  const onLinkProfile = useCallback(
+    async (p: ProfileRow) => {
+      if (!row?.case_id) return;
+      const ok = await linkProfileToCase(p.profile_id, row.case_id);
+      if (ok) {
+        setLinkProfileModalOpen(false);
+        await refreshTimelineAndLinks();
+      }
+    },
+    [row?.case_id, refreshTimelineAndLinks]
+  );
+
+  const confirmUnlinkProfile = useCallback(
+    (p: LinkedProfileRow) => {
+      if (!row?.case_id) return;
+      Alert.alert('Unlink profile?', `${p.name} (${p.profile_id})`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'UNLINK',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await unlinkProfileFromCase(p.profile_id, row.case_id);
+            if (ok) await refreshTimelineAndLinks();
+          },
+        },
+      ]);
+    },
+    [row?.case_id, refreshTimelineAndLinks]
+  );
+
+  const onOpenLinkedProfile = useCallback((p: LinkedProfileRow) => {
+    router.push({
+      pathname: './profiledetail',
+      params: { profile_id: p.profile_id },
+    });
+  }, []);
 
   const metaJson = useMemo(() => {
     if (!row?.metadata) return '';
@@ -197,6 +271,46 @@ export default function CaseDetailScreen() {
               )}
 
               <Text style={styles.sectionLabel} allowFontScaling={false}>
+                LINKED PROFILES
+              </Text>
+              <Pressable
+                onPress={() => void openLinkProfileModal()}
+                style={({ pressed }) => [styles.linkActionBtn, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Link profile to case"
+              >
+                <Text style={styles.linkActionBtnText}>LINK PROFILE</Text>
+              </Pressable>
+              {linkedProfiles.length === 0 ? (
+                <Text style={styles.timelineEmpty}>No linked profiles.</Text>
+              ) : (
+                linkedProfiles.map((p) => (
+                  <Pressable
+                    key={p.profile_id}
+                    onPress={() => onOpenLinkedProfile(p)}
+                    onLongPress={() => confirmUnlinkProfile(p)}
+                    style={({ pressed }) => [
+                      styles.linkedProfileCard,
+                      pressed && styles.pressed,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${p.name}. Long press to unlink.`}
+                  >
+                    <View style={styles.linkedProfileRow}>
+                      <Text style={styles.linkedProfileName} numberOfLines={1}>
+                        {p.name || p.profile_id}
+                      </Text>
+                      <View style={styles.roleBadge}>
+                        <Text style={styles.roleBadgeText} allowFontScaling={false}>
+                          {roleBadgeText(p.role)}
+                        </Text>
+                      </View>
+                    </View>
+                  </Pressable>
+                ))
+              )}
+
+              <Text style={styles.sectionLabel} allowFontScaling={false}>
                 CONTENT
               </Text>
               <Text style={styles.body}>{row.content || row.summary || '—'}</Text>
@@ -286,6 +400,64 @@ export default function CaseDetailScreen() {
                 </Pressable>
               </>
             ) : null}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={linkProfileModalOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setLinkProfileModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setLinkProfileModalOpen(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        >
+          <Pressable
+            style={[styles.modalCard, styles.linkPickerCard, { paddingBottom: Math.max(insets.bottom, 20) }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={styles.linkPickerTitle} allowFontScaling={false}>
+              LINK PROFILE
+            </Text>
+            {profilePickerLoading ? (
+              <Text style={styles.timelineEmpty}>Loading…</Text>
+            ) : (
+              <ScrollView style={styles.linkPickerScroll} nestedScrollEnabled>
+                {profilePicker.filter(
+                  (p) => !linkedProfiles.some((lp) => lp.profile_id === p.profile_id)
+                ).length === 0 ? (
+                  <Text style={styles.timelineEmpty}>No profiles to link.</Text>
+                ) : (
+                  profilePicker
+                    .filter((p) => !linkedProfiles.some((lp) => lp.profile_id === p.profile_id))
+                    .map((p) => (
+                      <Pressable
+                        key={p.profile_id}
+                        onPress={() => void onLinkProfile(p)}
+                        style={({ pressed }) => [
+                          styles.linkPickerRow,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.linkedProfileName}>{p.name}</Text>
+                        <Text style={styles.linkPickerMeta} allowFontScaling={false}>
+                          {p.profile_id}
+                        </Text>
+                      </Pressable>
+                    ))
+                )}
+              </ScrollView>
+            )}
+            <Pressable
+              onPress={() => setLinkProfileModalOpen(false)}
+              style={({ pressed }) => [styles.modalClose, pressed && styles.pressed]}
+            >
+              <Text style={styles.modalCloseText}>CLOSE</Text>
+            </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
@@ -449,6 +621,73 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     color: Colors.accent,
     fontWeight: '700',
+  },
+  linkActionBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 10,
+    paddingHorizontal: 0,
+    marginBottom: 10,
+  },
+  linkActionBtnText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#2d4a8a',
+    fontWeight: '700',
+  },
+  linkedProfileCard: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  linkedProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  linkedProfileName: {
+    fontSize: 14,
+    color: Colors.textPrimary,
+    flex: 1,
+    minWidth: 0,
+  },
+  roleBadge: {
+    borderWidth: 1,
+    borderColor: '#2d4a8a',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  roleBadgeText: {
+    fontSize: 9,
+    letterSpacing: 1,
+    color: '#2d4a8a',
+    fontWeight: '600',
+  },
+  linkPickerCard: {
+    maxHeight: '70%',
+  },
+  linkPickerTitle: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#2d4a8a',
+    marginBottom: 12,
+  },
+  linkPickerScroll: {
+    maxHeight: 360,
+  },
+  linkPickerRow: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f2937',
+  },
+  linkPickerMeta: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 4,
   },
   emptyWrap: {
     flex: 1,

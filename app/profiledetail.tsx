@@ -1,16 +1,41 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Colors } from '../constants/colors';
 import {
   deleteProfilePermanent,
+  fetchActiveCases,
+  fetchLinkedCases,
   getProfile,
+  linkProfileToCase,
   requestProfileAnalysis,
   terminateProfile,
+  unlinkProfileFromCase,
+  type CaseBoardRow,
   type ProfileRow,
 } from '../services/api';
+
+function statusDotColor(status: string): string {
+  const s = status.toLowerCase();
+  if (s === 'dormant') return Colors.textSecondary;
+  if (s === 'critical') return Colors.alert;
+  return Colors.signalOnline;
+}
+
+function isTerminatedStatus(status: string): boolean {
+  const s = status.toLowerCase();
+  return s === 'closed' || s === 'terminated' || s === 'archived';
+}
 
 export default function ProfileDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -20,6 +45,10 @@ export default function ProfileDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [requesting, setRequesting] = useState(false);
+  const [linkedCases, setLinkedCases] = useState<CaseBoardRow[]>([]);
+  const [linkCaseModalOpen, setLinkCaseModalOpen] = useState(false);
+  const [casePicker, setCasePicker] = useState<CaseBoardRow[]>([]);
+  const [casePickerLoading, setCasePickerLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!profileId) {
@@ -33,9 +62,22 @@ export default function ProfileDetailScreen() {
     setLoading(false);
   }, [profileId]);
 
+  const loadLinkedCases = useCallback(async () => {
+    if (!profileId) {
+      setLinkedCases([]);
+      return;
+    }
+    const rows = await fetchLinkedCases(profileId);
+    setLinkedCases(rows);
+  }, [profileId]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadLinkedCases();
+  }, [loadLinkedCases]);
 
   const onRequestAnalysis = useCallback(async () => {
     if (!profileId || requesting) return;
@@ -65,6 +107,54 @@ export default function ProfileDetailScreen() {
       },
     ]);
   }, [profileId]);
+
+  const openLinkCaseModal = useCallback(async () => {
+    setLinkCaseModalOpen(true);
+    setCasePickerLoading(true);
+    const rows = await fetchActiveCases();
+    setCasePicker(rows);
+    setCasePickerLoading(false);
+  }, []);
+
+  const onLinkCase = useCallback(
+    async (c: CaseBoardRow) => {
+      if (!profileId) return;
+      const ok = await linkProfileToCase(profileId, c.case_id);
+      if (ok) {
+        setLinkCaseModalOpen(false);
+        await loadLinkedCases();
+      }
+    },
+    [profileId, loadLinkedCases]
+  );
+
+  const confirmUnlinkCase = useCallback(
+    (c: CaseBoardRow) => {
+      if (!profileId) return;
+      Alert.alert('Unlink case?', `${c.case_id}`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'UNLINK',
+          style: 'destructive',
+          onPress: async () => {
+            const ok = await unlinkProfileFromCase(profileId, c.case_id);
+            if (ok) await loadLinkedCases();
+          },
+        },
+      ]);
+    },
+    [profileId, loadLinkedCases]
+  );
+
+  const onOpenLinkedCase = useCallback((c: CaseBoardRow) => {
+    router.push({
+      pathname: './casedetail',
+      params: { case: encodeURIComponent(JSON.stringify(c)) },
+    });
+  }, []);
+
+  const linkedIds = new Set(linkedCases.map((x) => x.case_id));
+  const availableCases = casePicker.filter((c) => !linkedIds.has(c.case_id));
 
   return (
     <View style={styles.root}>
@@ -105,6 +195,58 @@ export default function ProfileDetailScreen() {
               <Text style={styles.notes}>
                 {profile.notes?.trim() ? profile.notes : profile.summary || '—'}
               </Text>
+
+              <Text style={styles.sectionLabel} allowFontScaling={false}>
+                LINKED CASES
+              </Text>
+              <Pressable
+                onPress={() => void openLinkCaseModal()}
+                style={({ pressed }) => [styles.linkToCaseBtn, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel="Link to case"
+              >
+                <Text style={styles.linkToCaseBtnText}>LINK TO CASE</Text>
+              </Pressable>
+              {linkedCases.length === 0 ? (
+                <Text style={styles.linkedEmpty}>No linked cases.</Text>
+              ) : (
+                linkedCases.map((c) => {
+                  const terminated = isTerminatedStatus(String(c.status || ''));
+                  return (
+                    <Pressable
+                      key={c.case_id}
+                      onPress={() => onOpenLinkedCase(c)}
+                      onLongPress={() => confirmUnlinkCase(c)}
+                      style={({ pressed }) => [
+                        styles.caseCard,
+                        pressed && styles.pressed,
+                      ]}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${c.case_id}. Long press to unlink.`}
+                    >
+                      <View style={styles.caseCardTop}>
+                        <Text style={styles.caseCardId} allowFontScaling={false}>
+                          {c.case_id}
+                        </Text>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            { backgroundColor: statusDotColor(String(c.status || '')) },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.caseCardTitle} numberOfLines={2}>
+                        {c.title || 'Untitled case'}
+                      </Text>
+                      {terminated ? (
+                        <Text style={styles.caseCardMeta} allowFontScaling={false}>
+                          {String(c.status || '')}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  );
+                })
+              )}
             </ScrollView>
 
             <View
@@ -158,6 +300,67 @@ export default function ProfileDetailScreen() {
           </View>
         )}
       </SafeAreaView>
+
+      <Modal
+        visible={linkCaseModalOpen}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setLinkCaseModalOpen(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setLinkCaseModalOpen(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        >
+          <Pressable
+            style={[styles.modalCard, { paddingBottom: Math.max(insets.bottom, 20) }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={styles.modalTitle} allowFontScaling={false}>
+              LINK TO CASE
+            </Text>
+            {casePickerLoading ? (
+              <Text style={styles.linkedEmpty}>Loading…</Text>
+            ) : (
+              <ScrollView style={styles.modalScroll} nestedScrollEnabled>
+                {availableCases.length === 0 ? (
+                  <Text style={styles.linkedEmpty}>No cases to link.</Text>
+                ) : (
+                  availableCases.map((c) => (
+                    <Pressable
+                      key={c.case_id}
+                      onPress={() => void onLinkCase(c)}
+                      style={({ pressed }) => [styles.modalRow, pressed && styles.pressed]}
+                    >
+                      <View style={styles.caseCardTop}>
+                        <Text style={styles.caseCardId} allowFontScaling={false}>
+                          {c.case_id}
+                        </Text>
+                        <View
+                          style={[
+                            styles.statusDot,
+                            { backgroundColor: statusDotColor(String(c.status || '')) },
+                          ]}
+                        />
+                      </View>
+                      <Text style={styles.caseCardTitle} numberOfLines={2}>
+                        {c.title || 'Untitled case'}
+                      </Text>
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
+            )}
+            <Pressable
+              onPress={() => setLinkCaseModalOpen(false)}
+              style={({ pressed }) => [styles.modalClose, pressed && styles.pressed]}
+            >
+              <Text style={styles.modalCloseText}>CLOSE</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -197,6 +400,55 @@ const styles = StyleSheet.create({
   },
   analysis: { fontSize: 14, lineHeight: 22, color: Colors.textPrimary },
   notes: { fontSize: 14, lineHeight: 22, color: Colors.textSecondary },
+  linkToCaseBtn: {
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+    paddingVertical: 8,
+  },
+  linkToCaseBtnText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#2d4a8a',
+    fontWeight: '700',
+  },
+  linkedEmpty: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+  },
+  caseCard: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 12,
+    marginBottom: 8,
+  },
+  caseCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  caseCardId: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  caseCardTitle: {
+    fontSize: 13,
+    color: Colors.textPrimary,
+    lineHeight: 18,
+  },
+  caseCardMeta: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    marginTop: 4,
+  },
   bottomBar: {
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: Colors.border,
@@ -247,5 +499,44 @@ const styles = StyleSheet.create({
     color: Colors.alert,
     fontWeight: '700',
   },
+  pressed: { opacity: 0.75 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    padding: 16,
+    maxHeight: '75%',
+  },
+  modalTitle: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: '#2d4a8a',
+    marginBottom: 12,
+  },
+  modalScroll: {
+    maxHeight: 400,
+  },
+  modalRow: {
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1f2937',
+  },
+  modalClose: {
+    marginTop: 16,
+    alignSelf: 'flex-end',
+    paddingVertical: 8,
+  },
+  modalCloseText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    color: Colors.accent,
+    fontWeight: '700',
+  },
 });
-
