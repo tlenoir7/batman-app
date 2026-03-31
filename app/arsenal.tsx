@@ -16,9 +16,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '../constants/colors';
 import {
   createGadget,
+  fetchFailsafeProject,
   fetchGadgets,
   fetchSuitStatus,
   suggestGadgets,
+  type FailsafeProject,
   type GadgetRow,
   type GadgetStatus,
   type GadgetSuggestion,
@@ -40,8 +42,40 @@ function gadgetBadgeColor(status: string): string {
   return Colors.textSecondary; // concept
 }
 
+const FS_RED = Colors.alert;
+
+function clampTrl(n: number): number {
+  const t = Math.round(Number(n));
+  if (Number.isNaN(t)) return 1;
+  return Math.max(1, Math.min(9, t));
+}
+
+function trlDotColor(trl: number): string {
+  const t = clampTrl(trl);
+  if (t <= 3) return FS_RED;
+  if (t <= 6) return Colors.accent;
+  return Colors.signalOnline;
+}
+
+function normalizeSixTrls(fp: FailsafeProject | null): number[] {
+  const fromArr = fp?.subsystem_trls;
+  if (Array.isArray(fromArr) && fromArr.length > 0) {
+    const out: number[] = [];
+    for (let i = 0; i < 6; i++) out.push(clampTrl(fromArr[i] ?? 1));
+    return out;
+  }
+  const subs = fp?.subsystems;
+  if (Array.isArray(subs) && subs.length > 0) {
+    const out: number[] = [];
+    for (let i = 0; i < 6; i++) out.push(clampTrl(subs[i]?.trl ?? 1));
+    return out;
+  }
+  return [1, 1, 1, 1, 1, 1];
+}
+
 export default function ArsenalScreen() {
   const [suit, setSuit] = useState<SuitStatus | null>(null);
+  const [failsafe, setFailsafe] = useState<FailsafeProject | null>(null);
   const [gadgets, setGadgets] = useState<GadgetRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -57,9 +91,14 @@ export default function ArsenalScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [s, g] = await Promise.all([fetchSuitStatus(), fetchGadgets()]);
+    const [s, g, f] = await Promise.all([
+      fetchSuitStatus(),
+      fetchGadgets(),
+      fetchFailsafeProject(),
+    ]);
     setSuit(s);
     setGadgets(g);
+    setFailsafe(f);
     setLoading(false);
   }, []);
 
@@ -119,6 +158,8 @@ export default function ArsenalScreen() {
       .map((k) => ({ k, v: m[k]! }));
   }, [suit]);
 
+  const failsafeDots = useMemo(() => normalizeSixTrls(failsafe), [failsafe]);
+
   return (
     <View style={styles.root}>
       <Stack.Screen
@@ -158,6 +199,55 @@ export default function ArsenalScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
+          <Pressable
+            onPress={() => router.push('./failsafe')}
+            style={({ pressed }) => [styles.failsafeCard, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Open Failsafe project"
+          >
+            <View style={styles.failsafeTop}>
+              <Text style={styles.failsafeHeaderLabel} allowFontScaling={false}>
+                FAILSAFE
+              </Text>
+              <View style={[styles.fsStatusBadge, { borderColor: FS_RED }]}>
+                <Text style={[styles.fsStatusBadgeText, { color: FS_RED }]} allowFontScaling={false}>
+                  {String(failsafe?.project_status ?? 'UNKNOWN').toUpperCase()}
+                </Text>
+              </View>
+            </View>
+            <Text
+              style={[
+                styles.failsafeDirective,
+                !failsafe?.directive?.trim() && styles.failsafeDirectivePlaceholder,
+              ]}
+              numberOfLines={1}
+            >
+              {failsafe?.directive?.trim()
+                ? failsafe.directive.trim()
+                : 'Directive not yet defined.'}
+            </Text>
+            <Text
+              style={
+                failsafe?.memory_wipe_implemented
+                  ? styles.memWipeImplemented
+                  : styles.memWipePending
+              }
+              allowFontScaling={false}
+            >
+              {failsafe?.memory_wipe_implemented
+                ? 'MEMORY WIPE: IMPLEMENTED'
+                : 'MEMORY WIPE: PENDING'}
+            </Text>
+            <View style={styles.dotRow}>
+              {failsafeDots.map((t, i) => (
+                <View
+                  key={`fs-dot-${i}`}
+                  style={[styles.trlDot, { backgroundColor: trlDotColor(t) }]}
+                />
+              ))}
+            </View>
+          </Pressable>
+
           <Pressable
             onPress={() => router.push('./suitdetail')}
             style={({ pressed }) => [styles.suitCard, pressed && styles.pressed]}
@@ -369,6 +459,66 @@ const styles = StyleSheet.create({
   loading: { height: 0 },
   content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 },
   pressed: { opacity: 0.75 },
+
+  failsafeCard: {
+    borderWidth: 1,
+    borderColor: FS_RED,
+    padding: 16,
+    marginBottom: 16,
+  },
+  failsafeTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  failsafeHeaderLabel: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: FS_RED,
+  },
+  fsStatusBadge: {
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  fsStatusBadgeText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    fontWeight: '700',
+  },
+  failsafeDirective: {
+    marginTop: 12,
+    fontSize: 15,
+    fontStyle: 'italic',
+    color: Colors.textPrimary,
+  },
+  failsafeDirectivePlaceholder: {
+    fontStyle: 'italic',
+    color: Colors.textSecondary,
+  },
+  memWipePending: {
+    marginTop: 10,
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  memWipeImplemented: {
+    marginTop: 10,
+    fontSize: 12,
+    color: FS_RED,
+  },
+  dotRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    gap: 6,
+  },
+  trlDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
 
   headerRight: { flexDirection: 'row', alignItems: 'center' },
   headerBtn: {

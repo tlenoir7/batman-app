@@ -688,6 +688,178 @@ export async function suggestGadgets(context: string): Promise<GadgetSuggestion[
   }
 }
 
+/** Failsafe Project (Arsenal) — backend may return nested `project` or flat object. */
+export type FailsafeSubsystemSummary = {
+  name: string;
+  display_name?: string;
+  trl: number;
+  status: string;
+  next_milestone?: string;
+};
+
+export type FailsafeProject = {
+  project_status: string;
+  directive?: string;
+  memory_wipe_implemented?: boolean;
+  /** Bruce warning copy for the two-step memory wipe flow */
+  memory_wipe_warning?: string;
+  /** Six TRL values (1–9), one per subsystem */
+  subsystem_trls?: number[];
+  subsystems?: FailsafeSubsystemSummary[];
+  bruce_assessment?: string;
+  uap_connection_notes?: string;
+};
+
+export type FailsafeSubsystemDetail = {
+  name: string;
+  trl: number;
+  status: string;
+  description?: string;
+  engineering_notes?: string;
+  next_milestone?: string;
+  uap_affected?: boolean;
+  bruce_assessment?: string;
+};
+
+function unwrapFailsafeProject(data: unknown): FailsafeProject | null {
+  if (data == null || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  const inner = d.project ?? d.failsafe ?? d;
+  if (inner == null || typeof inner !== 'object') return null;
+  return inner as FailsafeProject;
+}
+
+export async function fetchFailsafeProject(): Promise<FailsafeProject | null> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe', { method: 'GET' });
+    if (!ok) return null;
+    return unwrapFailsafeProject(data);
+  } catch {
+    return null;
+  }
+}
+
+export async function requestFailsafeAssessment(): Promise<FailsafeProject | null> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe/assess', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!ok) return null;
+    return unwrapFailsafeProject(data);
+  } catch {
+    return null;
+  }
+}
+
+export async function updateFailsafeProject(
+  fields: Partial<FailsafeProject>
+): Promise<FailsafeProject | null> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields ?? {}),
+    });
+    if (!ok) return null;
+    return unwrapFailsafeProject(data);
+  } catch {
+    return null;
+  }
+}
+
+export async function setFailsafeDirective(directive: string): Promise<FailsafeProject | null> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe/directive', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ directive: String(directive ?? '') }),
+    });
+    if (!ok) return null;
+    return unwrapFailsafeProject(data);
+  } catch {
+    return null;
+  }
+}
+
+export async function implementMemoryWipe(): Promise<FailsafeProject | null> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe/memory-wipe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!ok) return null;
+    return unwrapFailsafeProject(data);
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchFailsafeSubsystem(subsystemName: string): Promise<FailsafeSubsystemDetail | null> {
+  const enc = encodeURIComponent(String(subsystemName || '').trim());
+  if (!enc) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/arsenal/failsafe/subsystems/${enc}`, {
+      method: 'GET',
+    });
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const sub = d.subsystem ?? d;
+    if (!sub || typeof sub !== 'object') return null;
+    return sub as FailsafeSubsystemDetail;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestSubsystemAssessment(
+  subsystemName: string
+): Promise<FailsafeSubsystemDetail | null> {
+  const enc = encodeURIComponent(String(subsystemName || '').trim());
+  if (!enc) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(
+      `/api/arsenal/failsafe/subsystems/${enc}/assess`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }
+    );
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const sub = d.subsystem ?? d;
+    if (!sub || typeof sub !== 'object') return null;
+    return sub as FailsafeSubsystemDetail;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateSubsystem(
+  subsystemName: string,
+  fields: Partial<FailsafeSubsystemDetail>
+): Promise<FailsafeSubsystemDetail | null> {
+  const enc = encodeURIComponent(String(subsystemName || '').trim());
+  if (!enc) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/arsenal/failsafe/subsystems/${enc}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields ?? {}),
+    });
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const sub = d.subsystem ?? d;
+    if (!sub || typeof sub !== 'object') return null;
+    return sub as FailsafeSubsystemDetail;
+  } catch {
+    return null;
+  }
+}
+
 export type ContingencyClassification =
   | 'STANDARD'
   | 'ADVANCED'

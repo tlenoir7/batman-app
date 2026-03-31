@@ -88,6 +88,20 @@ export default function RootLayout() {
           }}
         />
         <Stack.Screen
+          name="failsafe"
+          options={{
+            title: 'Failsafe',
+            headerBackTitle: 'Arsenal',
+          }}
+        />
+        <Stack.Screen
+          name="failsafesubsystem"
+          options={{
+            title: 'Subsystem',
+            headerBackTitle: 'Failsafe',
+          }}
+        />
+        <Stack.Screen
           name="contingencies"
           options={{
             title: 'Contingencies',
