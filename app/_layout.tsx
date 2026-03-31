@@ -31,6 +31,13 @@ export default function RootLayout() {
             headerBackTitle: 'Briefing',
           }}
         />
+        <Stack.Screen
+          name="casedetail"
+          options={{
+            title: 'Case Detail',
+            headerBackTitle: 'Case Board',
+          }}
+        />
       </Stack>
     </SafeAreaProvider>
   );

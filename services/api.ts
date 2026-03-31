@@ -38,10 +38,12 @@ function extractReplyFromPayload(data: unknown): string | null {
  */
 export type CaseBoardRow = {
   case_id: string;
-  status: 'active' | 'dormant' | 'critical' | string;
+  status: 'active' | 'dormant' | 'critical' | 'closed' | 'terminated' | 'archived' | string;
   title: string;
   last_update: string;
   summary: string;
+  content?: string;
+  metadata?: Record<string, unknown>;
 };
 
 /** GET /api/cases — active case board entries (JSON array). On failure, []. */
@@ -62,6 +64,43 @@ export async function fetchActiveCases(): Promise<CaseBoardRow[]> {
     );
   } catch {
     return [];
+  }
+}
+
+export async function createCase(payload: {
+  title: string;
+  summary: string;
+}): Promise<CaseBoardRow | null> {
+  const title = String(payload.title || '').trim();
+  const summary = String(payload.summary || '').trim();
+  if (!title) return null;
+
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/cases/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, summary }),
+    });
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const c = d.case;
+    if (!c || typeof c !== 'object') return null;
+    const row = c as CaseBoardRow;
+    if (typeof row.case_id !== 'string') return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+export async function closeCase(caseId: string): Promise<boolean> {
+  const cid = encodeURIComponent(String(caseId || '').trim());
+  if (!cid) return false;
+  try {
+    const res = await fetch(joinUrl(`/api/cases/${cid}`), { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 
