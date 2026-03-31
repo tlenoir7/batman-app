@@ -688,6 +688,226 @@ export async function suggestGadgets(context: string): Promise<GadgetSuggestion[
   }
 }
 
+export type ContingencyClassification =
+  | 'STANDARD'
+  | 'ADVANCED'
+  | 'THEORETICAL'
+  | 'FAILSAFE'
+  | string;
+
+export type ContingencyStatus =
+  | 'THEORETICAL'
+  | 'STAGED'
+  | 'READY'
+  | 'ACTIVATED'
+  | 'RETIRED'
+  | string;
+
+export type ContingencyRow = {
+  cont_id: string;
+  title: string;
+  classification: ContingencyClassification;
+  status: ContingencyStatus;
+  trigger_condition?: string;
+  objective?: string;
+  execution_steps?: string;
+  failsafe_within?: string;
+  bruce_assessment?: string;
+};
+
+export type CreateContingencyPayload = {
+  title: string;
+  classification: ContingencyClassification;
+  trigger_condition: string;
+  objective: string;
+  execution_steps: string;
+  failsafe_within: string;
+};
+
+export type ContingencyProposal = {
+  title: string;
+  classification: ContingencyClassification;
+  trigger_condition?: string;
+  objective?: string;
+  execution_steps?: string;
+  failsafe_within?: string;
+};
+
+export async function fetchContingencies(): Promise<ContingencyRow[]> {
+  try {
+    const res = await fetch(joinUrl('/api/contingencies'), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(data)) return [];
+    return data.filter(
+      (row): row is ContingencyRow =>
+        row != null &&
+        typeof row === 'object' &&
+        typeof (row as ContingencyRow).cont_id === 'string' &&
+        typeof (row as ContingencyRow).title === 'string'
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function createContingency(
+  fields: CreateContingencyPayload
+): Promise<ContingencyRow | null> {
+  const title = String(fields.title || '').trim();
+  if (!title) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/contingencies/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        classification: fields.classification,
+        trigger_condition: String(fields.trigger_condition ?? ''),
+        objective: String(fields.objective ?? ''),
+        execution_steps: String(fields.execution_steps ?? ''),
+        failsafe_within: String(fields.failsafe_within ?? ''),
+      }),
+    });
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const c = d.contingency ?? d.contingency_row ?? d;
+    if (!c || typeof c !== 'object') return null;
+    const row = c as ContingencyRow;
+    if (typeof row.cont_id !== 'string') return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+export async function getContingency(contId: string): Promise<ContingencyRow | null> {
+  const id = encodeURIComponent(String(contId || '').trim());
+  if (!id) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/contingencies/${id}`, { method: 'GET' });
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const c = d.contingency ?? d;
+    if (!c || typeof c !== 'object') return null;
+    const row = c as ContingencyRow;
+    if (typeof row.cont_id !== 'string') return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestContingencyAssessment(contId: string): Promise<ContingencyRow | null> {
+  const id = encodeURIComponent(String(contId || '').trim());
+  if (!id) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/contingencies/${id}/assess`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const c = d.contingency ?? d;
+    if (!c || typeof c !== 'object') return null;
+    const row = c as ContingencyRow;
+    if (typeof row.cont_id !== 'string') return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+export async function updateContingency(
+  contId: string,
+  fields: Partial<ContingencyRow>
+): Promise<ContingencyRow | null> {
+  const id = encodeURIComponent(String(contId || '').trim());
+  if (!id) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/contingencies/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(fields ?? {}),
+    });
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const c = d.contingency ?? d;
+    if (!c || typeof c !== 'object') return null;
+    const row = c as ContingencyRow;
+    if (typeof row.cont_id !== 'string') return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+export async function activateContingency(contId: string): Promise<boolean> {
+  const id = encodeURIComponent(String(contId || '').trim());
+  if (!id) return false;
+  try {
+    const { ok } = await apiFetch<unknown>(`/api/contingencies/${id}/activate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function retireContingency(contId: string): Promise<boolean> {
+  const id = encodeURIComponent(String(contId || '').trim());
+  if (!id) return false;
+  try {
+    const { ok } = await apiFetch<unknown>(`/api/contingencies/${id}/retire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteContingency(contId: string): Promise<boolean> {
+  const id = encodeURIComponent(String(contId || '').trim());
+  if (!id) return false;
+  try {
+    const res = await fetch(joinUrl(`/api/contingencies/${id}`), { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function proposeContingencies(situation: string): Promise<ContingencyProposal[]> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/contingencies/propose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ situation: String(situation ?? '') }),
+    });
+    if (!ok) return [];
+    if (Array.isArray(data)) return data as ContingencyProposal[];
+    if (data && typeof data === 'object' && Array.isArray((data as { contingencies?: unknown }).contingencies)) {
+      return (data as { contingencies: ContingencyProposal[] }).contingencies;
+    }
+    if (data && typeof data === 'object' && Array.isArray((data as { proposals?: unknown }).proposals)) {
+      return (data as { proposals: ContingencyProposal[] }).proposals;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export async function postBriefingMessage(payload: {
   message: string;
   first_contact?: boolean;

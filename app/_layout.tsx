@@ -87,6 +87,20 @@ export default function RootLayout() {
             headerBackTitle: 'Arsenal',
           }}
         />
+        <Stack.Screen
+          name="contingencies"
+          options={{
+            title: 'Contingencies',
+            headerBackTitle: 'Briefing',
+          }}
+        />
+        <Stack.Screen
+          name="contingencydetail"
+          options={{
+            title: 'Contingency',
+            headerBackTitle: 'Contingencies',
+          }}
+        />
       </Stack>
     </SafeAreaProvider>
   );

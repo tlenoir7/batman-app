@@ -390,6 +390,21 @@ export default function Index() {
                 />
               </Pressable>
               <Pressable
+                onPress={() => router.push('./contingencies')}
+                style={({ pressed }) => [
+                  styles.boardBtn,
+                  pressed && styles.boardBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Open contingencies"
+              >
+                <Ionicons
+                  name="shield-outline"
+                  size={20}
+                  color={Colors.accent}
+                />
+              </Pressable>
+              <Pressable
                 onPress={() => router.push('./voicenote')}
                 style={({ pressed }) => [
                   styles.boardBtn,
