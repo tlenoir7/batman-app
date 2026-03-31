@@ -132,6 +132,10 @@ export function connectSocket(): Socket | null {
     path: SOCKET_IO_PATH,
     transports: ['websocket', 'polling'],
     reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 15000,
+    timeout: 25000,
   });
 
   attachSocketListeners(socket);

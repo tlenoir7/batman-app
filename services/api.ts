@@ -731,7 +731,7 @@ function unwrapFailsafeProject(data: unknown): FailsafeProject | null {
 
 export async function fetchFailsafeProject(): Promise<FailsafeProject | null> {
   try {
-    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe', { method: 'GET' });
+    const { ok, data } = await apiFetch<unknown>('/api/failsafe', { method: 'GET' });
     if (!ok) return null;
     return unwrapFailsafeProject(data);
   } catch {
@@ -741,7 +741,7 @@ export async function fetchFailsafeProject(): Promise<FailsafeProject | null> {
 
 export async function requestFailsafeAssessment(): Promise<FailsafeProject | null> {
   try {
-    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe/assess', {
+    const { ok, data } = await apiFetch<unknown>('/api/failsafe/assess', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -757,7 +757,7 @@ export async function updateFailsafeProject(
   fields: Partial<FailsafeProject>
 ): Promise<FailsafeProject | null> {
   try {
-    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe', {
+    const { ok, data } = await apiFetch<unknown>('/api/failsafe', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields ?? {}),
@@ -771,7 +771,7 @@ export async function updateFailsafeProject(
 
 export async function setFailsafeDirective(directive: string): Promise<FailsafeProject | null> {
   try {
-    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe/directive', {
+    const { ok, data } = await apiFetch<unknown>('/api/failsafe/directive', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ directive: String(directive ?? '') }),
@@ -785,7 +785,7 @@ export async function setFailsafeDirective(directive: string): Promise<FailsafeP
 
 export async function implementMemoryWipe(): Promise<FailsafeProject | null> {
   try {
-    const { ok, data } = await apiFetch<unknown>('/api/arsenal/failsafe/memory-wipe', {
+    const { ok, data } = await apiFetch<unknown>('/api/failsafe/memory-wipe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
@@ -801,7 +801,7 @@ export async function fetchFailsafeSubsystem(subsystemName: string): Promise<Fai
   const enc = encodeURIComponent(String(subsystemName || '').trim());
   if (!enc) return null;
   try {
-    const { ok, data } = await apiFetch<unknown>(`/api/arsenal/failsafe/subsystems/${enc}`, {
+    const { ok, data } = await apiFetch<unknown>(`/api/failsafe/subsystems/${enc}`, {
       method: 'GET',
     });
     if (!ok || data == null || typeof data !== 'object') return null;
@@ -821,7 +821,7 @@ export async function requestSubsystemAssessment(
   if (!enc) return null;
   try {
     const { ok, data } = await apiFetch<unknown>(
-      `/api/arsenal/failsafe/subsystems/${enc}/assess`,
+      `/api/failsafe/subsystems/${enc}/assess`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -845,7 +845,7 @@ export async function updateSubsystem(
   const enc = encodeURIComponent(String(subsystemName || '').trim());
   if (!enc) return null;
   try {
-    const { ok, data } = await apiFetch<unknown>(`/api/arsenal/failsafe/subsystems/${enc}`, {
+    const { ok, data } = await apiFetch<unknown>(`/api/failsafe/subsystems/${enc}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields ?? {}),
