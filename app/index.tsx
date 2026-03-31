@@ -177,6 +177,21 @@ export default function Index() {
                   color={Colors.accent}
                 />
               </Pressable>
+              <Pressable
+                onPress={() => router.push('./profiles')}
+                style={({ pressed }) => [
+                  styles.boardBtn,
+                  pressed && styles.boardBtnPressed,
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Open profiles board"
+              >
+                <Ionicons
+                  name="person-outline"
+                  size={20}
+                  color={Colors.accent}
+                />
+              </Pressable>
               <View style={styles.statusWrap}>
                 {voiceSessionLive ? (
                   <Animated.View

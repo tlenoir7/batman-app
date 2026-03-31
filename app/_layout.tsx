@@ -38,6 +38,20 @@ export default function RootLayout() {
             headerBackTitle: 'Case Board',
           }}
         />
+        <Stack.Screen
+          name="profiles"
+          options={{
+            title: 'Profiles',
+            headerBackTitle: 'Briefing',
+          }}
+        />
+        <Stack.Screen
+          name="profiledetail"
+          options={{
+            title: 'Profile',
+            headerBackTitle: 'Profiles',
+          }}
+        />
       </Stack>
     </SafeAreaProvider>
   );

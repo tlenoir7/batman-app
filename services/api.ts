@@ -104,6 +104,105 @@ export async function closeCase(caseId: string): Promise<boolean> {
   }
 }
 
+export type ProfileRow = {
+  profile_id: string;
+  name: string;
+  role: string;
+  summary: string;
+  last_updated: string;
+  bruce_analysis?: string;
+  notes?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export async function fetchProfiles(): Promise<ProfileRow[]> {
+  try {
+    const res = await fetch(joinUrl('/api/profiles'), {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+    const data: unknown = await res.json().catch(() => null);
+    if (!Array.isArray(data)) return [];
+    return data.filter(
+      (row): row is ProfileRow =>
+        row != null &&
+        typeof row === 'object' &&
+        typeof (row as ProfileRow).profile_id === 'string'
+    );
+  } catch {
+    return [];
+  }
+}
+
+export async function createProfile(payload: {
+  name: string;
+  role: string;
+  notes: string;
+}): Promise<ProfileRow | null> {
+  const name = String(payload.name || '').trim();
+  const role = String(payload.role || 'UNKNOWN').trim();
+  const notes = String(payload.notes || '').trim();
+  if (!name) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/profiles/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, role, notes }),
+    });
+    if (!ok || data == null || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const p = d.profile;
+    if (!p || typeof p !== 'object') return null;
+    const row = p as ProfileRow;
+    if (typeof row.profile_id !== 'string') return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+export async function getProfile(profileId: string): Promise<ProfileRow | null> {
+  const pid = encodeURIComponent(String(profileId || '').trim());
+  if (!pid) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/profiles/${pid}`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!ok || !data || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const p = d.profile;
+    if (!p || typeof p !== 'object') return null;
+    const row = p as ProfileRow;
+    if (typeof row.profile_id !== 'string') return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
+export async function requestProfileAnalysis(profileId: string): Promise<ProfileRow | null> {
+  const pid = encodeURIComponent(String(profileId || '').trim());
+  if (!pid) return null;
+  try {
+    const { ok, data } = await apiFetch<unknown>(`/api/profiles/${pid}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    if (!ok || !data || typeof data !== 'object') return null;
+    const d = data as Record<string, unknown>;
+    const p = d.profile;
+    if (!p || typeof p !== 'object') return null;
+    const row = p as ProfileRow;
+    if (typeof row.profile_id !== 'string') return null;
+    return row;
+  } catch {
+    return null;
+  }
+}
+
 export async function postBriefingMessage(payload: {
   message: string;
   first_contact?: boolean;
