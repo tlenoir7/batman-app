@@ -18,6 +18,7 @@ export default function SuitDetailScreen() {
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [assessing, setAssessing] = useState(false);
 
   const load = useCallback(async () => {
     const s = await fetchSuitStatus();
@@ -37,12 +38,29 @@ export default function SuitDetailScreen() {
   }, [suit]);
 
   const onAssess = useCallback(async () => {
-    const s = await requestSuitAssessment();
-    if (s) {
-      setSuit(s);
-      setNotes(s.notes ?? '');
+    if (assessing) return;
+    setAssessing(true);
+    try {
+      const assessed = await requestSuitAssessment();
+      if (!assessed) return;
+
+      // Immediate UI refresh from assessment response...
+      setSuit(assessed);
+      setNotes(assessed.notes ?? '');
+
+      // ...then reload canonical suit state.
+      const fresh = await fetchSuitStatus();
+      if (fresh) {
+        setSuit(fresh);
+        setNotes(fresh.notes ?? '');
+      }
+    } catch (e) {
+      // Keep the UI silent, but don't swallow completely.
+      console.warn('Suit assessment failed', e);
+    } finally {
+      setAssessing(false);
     }
-  }, []);
+  }, [assessing]);
 
   const onSaveNotes = useCallback(async () => {
     if (saving) return;
@@ -123,12 +141,20 @@ export default function SuitDetailScreen() {
         <View style={styles.bottomBar}>
           <Pressable
             onPress={onAssess}
-            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+            disabled={assessing}
+            style={({ pressed }) => [
+              styles.btn,
+              pressed && styles.pressed,
+              assessing && styles.disabled,
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Request assessment"
           >
-            <Text style={styles.btnTextAccent} allowFontScaling={false}>
-              REQUEST ASSESSMENT
+            <Text
+              style={assessing ? styles.btnTextMuted : styles.btnTextAccent}
+              allowFontScaling={false}
+            >
+              {assessing ? 'ANALYZING...' : 'REQUEST ASSESSMENT'}
             </Text>
           </Pressable>
           <Pressable
