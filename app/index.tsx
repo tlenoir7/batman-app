@@ -50,10 +50,14 @@ export default function Index() {
   useEffect(() => {
     // Ensure the shared client exists before subscribing (same instance as _layout connectSocket).
     connectSocket();
+    // If index remounts while the socket is already connected, sync before subscribing so we don't miss "green".
+    setConnected(getSocket()?.connected ?? false);
+
     let timer: ReturnType<typeof setTimeout> | undefined;
     const unsub = subscribeSocketConnection((isConnected) => {
-      setConnected(isConnected);
-      if (!isConnected) return;
+      const online = getSocket()?.connected ?? isConnected;
+      setConnected(online);
+      if (!online) return;
       if (firstConnectHandledRef.current) return;
       firstConnectHandledRef.current = true;
       timer = setTimeout(async () => {
@@ -75,6 +79,8 @@ export default function Index() {
         ]);
       }, OPENING_DELAY_MS);
     });
+    setConnected(getSocket()?.connected ?? false);
+
     return () => {
       unsub();
       if (timer) clearTimeout(timer);
