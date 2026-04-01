@@ -12,12 +12,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { TechnicalIntelligenceFile } from '../components/TechnicalIntelligenceFile';
 import { Colors } from '../constants/colors';
 import {
   attachToCase,
   deleteGadget,
   fetchActiveCases,
   getGadget,
+  parseTechnicalFile,
   requestGadgetAssessment,
   updateGadget,
   type CaseBoardRow,
@@ -40,6 +42,7 @@ export default function GadgetDetailScreen() {
   const [gadget, setGadget] = useState<GadgetRow | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
+  const [assessing, setAssessing] = useState(false);
 
   const [name, setName] = useState('');
   const [status, setStatus] = useState<GadgetStatus>('concept');
@@ -81,19 +84,37 @@ export default function GadgetDetailScreen() {
     })();
   }, [attachOpen]);
 
-  const onAssess = useCallback(async () => {
-    if (!gadgetId) return;
-    const g = await requestGadgetAssessment(gadgetId);
-    if (g) {
-      setGadget(g);
-      setName(g.name ?? '');
-      setStatus((g.status ?? 'concept') as GadgetStatus);
-      setTrl(String(g.trl ?? 4));
-      setDescription(g.description ?? '');
-      setBuildNotes(g.build_notes ?? '');
-      setMaterials(g.materials ?? '');
+  const parsed = useMemo(() => {
+    const raw = gadget?.bruce_briefing?.trim() ?? '';
+    if (!raw) return {};
+    const p = parseTechnicalFile(raw);
+    if (Object.keys(p).length === 0) {
+      return { 'TECHNICAL OVERVIEW': raw };
     }
-  }, [gadgetId]);
+    return p;
+  }, [gadget?.bruce_briefing]);
+
+  const hasAssessment = Boolean(gadget?.bruce_briefing?.trim());
+
+  const onAssess = useCallback(async () => {
+    if (!gadgetId || assessing) return;
+    setAssessing(true);
+    try {
+      const g = await requestGadgetAssessment(gadgetId);
+      if (g) {
+        setGadget(g);
+        setName(g.name ?? '');
+        setStatus((g.status ?? 'concept') as GadgetStatus);
+        setTrl(String(g.trl ?? 4));
+        setDescription(g.description ?? '');
+        setBuildNotes(g.build_notes ?? '');
+        setMaterials(g.materials ?? '');
+      }
+      await load();
+    } finally {
+      setAssessing(false);
+    }
+  }, [gadgetId, assessing, load]);
 
   const onSave = useCallback(async () => {
     if (!gadgetId || saving) return;
@@ -150,7 +171,11 @@ export default function GadgetDetailScreen() {
     <View style={styles.root}>
       <Stack.Screen options={{ title: gadget?.name || 'Gadget' }} />
       <SafeAreaView style={styles.safe} edges={['bottom']}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
           <Text style={styles.title}>{gadget?.name || '—'}</Text>
 
           <View style={styles.metaRow}>
@@ -165,71 +190,53 @@ export default function GadgetDetailScreen() {
             <Text style={styles.trl}>TRL {gadget?.trl ?? Number(trl || 1)}</Text>
           </View>
 
-          <Text style={styles.sectionLabel} allowFontScaling={false}>
-            DESCRIPTION
-          </Text>
-          <Text style={styles.body}>{gadget?.description || '—'}</Text>
-
-          <Text style={styles.sectionLabel} allowFontScaling={false}>
-            BUILD NOTES
-          </Text>
-          <Text style={styles.body}>{gadget?.build_notes || '—'}</Text>
-
-          <Text style={styles.sectionLabel} allowFontScaling={false}>
-            MATERIALS
-          </Text>
-          <Text style={styles.body}>{gadget?.materials || '—'}</Text>
-
-          <Text style={styles.sectionLabel} allowFontScaling={false}>
-            BRUCE'S ENGINEERING ASSESSMENT
-          </Text>
-          <Text style={styles.brief}>{gadget?.bruce_briefing?.trim() || '—'}</Text>
+          {!hasAssessment ? (
+            <Text style={styles.emptyFile}>No technical file. Request assessment to generate.</Text>
+          ) : (
+            <TechnicalIntelligenceFile parsed={parsed} />
+          )}
         </ScrollView>
 
-        <View style={styles.bottomBar}>
-          <Pressable
-            onPress={onAssess}
-            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Request assessment"
-          >
-            <Text style={styles.btnTextAccent} allowFontScaling={false}>
-              REQUEST ASSESSMENT
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setEditOpen(true)}
-            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Update gadget"
-          >
-            <Text style={styles.btnTextMuted} allowFontScaling={false}>
-              UPDATE
-            </Text>
-          </Pressable>
-        </View>
-
-        <View style={styles.bottomBar2}>
-          <Pressable
-            onPress={() => setAttachOpen(true)}
-            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Attach to case"
-          >
-            <Text style={styles.btnTextAccent} allowFontScaling={false}>
-              ATTACH TO CASE
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={onDelete}
-            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Delete gadget"
-          >
-            <Text style={[styles.btnTextMuted, { color: Colors.alert }]} allowFontScaling={false}>
-              DELETE
-            </Text>
-          </Pressable>
+        <View style={styles.footer}>
+          <View style={styles.footerRow}>
+            <Pressable
+              onPress={() => void onAssess()}
+              disabled={assessing}
+              style={({ pressed }) => [
+                styles.footerBtn,
+                styles.footerBtnAccent,
+                pressed && styles.pressed,
+                assessing && styles.disabled,
+              ]}
+            >
+              <Text style={[styles.footerBtnAccentText, assessing && { color: Colors.textSecondary }]} allowFontScaling={false}>
+                {assessing ? 'ANALYZING...' : 'REQUEST ASSESSMENT'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setEditOpen(true)}
+              style={({ pressed }) => [styles.footerBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.footerBtnMuted} allowFontScaling={false}>
+                UPDATE
+              </Text>
+            </Pressable>
+          </View>
+          <View style={styles.footerRow}>
+            <Pressable
+              onPress={() => setAttachOpen(true)}
+              style={({ pressed }) => [styles.footerBtn, styles.footerBtnAccent, pressed && styles.pressed]}
+            >
+              <Text style={styles.footerBtnAccentText} allowFontScaling={false}>
+                ATTACH TO CASE
+              </Text>
+            </Pressable>
+            <Pressable onPress={onDelete} style={({ pressed }) => [styles.footerBtn, pressed && styles.pressed]}>
+              <Text style={[styles.footerBtnMuted, { color: Colors.alert }]} allowFontScaling={false}>
+                DELETE
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -267,36 +274,12 @@ export default function GadgetDetailScreen() {
               placeholderTextColor={Colors.textSecondary}
               keyboardType="number-pad"
             />
-            <TextInput
-              style={[styles.modalInput, styles.modalInputMulti]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="Description"
-              placeholderTextColor={Colors.textSecondary}
-              multiline
-            />
-            <TextInput
-              style={[styles.modalInput, styles.modalInputMulti]}
-              value={buildNotes}
-              onChangeText={setBuildNotes}
-              placeholder="Build notes"
-              placeholderTextColor={Colors.textSecondary}
-              multiline
-            />
-            <TextInput
-              style={[styles.modalInput, styles.modalInputMulti]}
-              value={materials}
-              onChangeText={setMaterials}
-              placeholder="Materials"
-              placeholderTextColor={Colors.textSecondary}
-              multiline
-            />
             <View style={styles.modalBtns}>
               <Pressable
                 onPress={() => setEditOpen(false)}
                 style={({ pressed }) => [styles.modalBtn, pressed && styles.pressed]}
               >
-                <Text style={styles.btnTextMuted} allowFontScaling={false}>
+                <Text style={styles.footerBtnMuted} allowFontScaling={false}>
                   CANCEL
                 </Text>
               </Pressable>
@@ -309,7 +292,7 @@ export default function GadgetDetailScreen() {
                   (saving || !name.trim()) && styles.disabled,
                 ]}
               >
-                <Text style={styles.btnTextAccent} allowFontScaling={false}>
+                <Text style={styles.footerBtnAccentText} allowFontScaling={false}>
                   SAVE
                 </Text>
               </Pressable>
@@ -353,7 +336,7 @@ export default function GadgetDetailScreen() {
               onPress={() => setAttachOpen(false)}
               style={({ pressed }) => [styles.modalBtn, pressed && styles.pressed]}
             >
-              <Text style={styles.btnTextMuted} allowFontScaling={false}>
+              <Text style={styles.footerBtnMuted} allowFontScaling={false}>
                 CLOSE
               </Text>
             </Pressable>
@@ -367,36 +350,60 @@ export default function GadgetDetailScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   safe: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 18 },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 },
   pressed: { opacity: 0.75 },
-  disabled: { opacity: 0.4 },
+  disabled: { opacity: 0.45 },
 
   title: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
-  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, marginBottom: 8 },
   badge: { borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4 },
   badgeText: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase' },
   trl: { fontSize: 12, color: Colors.textSecondary },
 
-  sectionLabel: { marginTop: 18, fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
-  body: { marginTop: 8, fontSize: 14, color: Colors.textSecondary, lineHeight: 22 },
-  brief: { marginTop: 8, fontSize: 15, fontStyle: 'italic', color: Colors.textPrimary, lineHeight: 24 },
+  emptyFile: {
+    marginTop: 32,
+    textAlign: 'center',
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 22,
+  },
 
-  bottomBar: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, borderTopWidth: 1, borderTopColor: Colors.border },
-  bottomBar2: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingBottom: 14 },
-  btn: { flex: 1, height: 44, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
-  btnTextAccent: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.accent, fontWeight: '700' },
-  btnTextMuted: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+    backgroundColor: Colors.background,
+  },
+  footerRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  footerBtn: {
+    flex: 1,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  footerBtnAccent: { borderColor: Colors.accent },
+  footerBtnAccentText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+    fontWeight: '700',
+  },
+  footerBtnMuted: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
 
+  body: { fontSize: 14, color: Colors.textSecondary },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', paddingHorizontal: 18 },
   modalCard: { borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background, padding: 16, maxHeight: '80%' },
   modalTitle: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.accent, marginBottom: 12 },
   modalInput: { minHeight: 44, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.inputBackground, color: Colors.textPrimary, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, marginBottom: 12 },
-  modalInputMulti: { minHeight: 90, textAlignVertical: 'top' },
   modalBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
   modalBtn: { height: 44, paddingHorizontal: 12, justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
-
   caseRow: { borderWidth: 1, borderColor: Colors.border, padding: 12, marginBottom: 10 },
   caseId: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.accent },
   caseTitle: { marginTop: 6, fontSize: 14, color: Colors.textPrimary },
 });
-

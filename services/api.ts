@@ -516,6 +516,63 @@ export type SuitStatus = {
   notes?: string;
 };
 
+/** Ordered section headers in bruce_briefing structured assessments. */
+export const TECHNICAL_FILE_SECTION_ORDER = [
+  'TECHNICAL OVERVIEW',
+  'STRUCTURAL SCHEMATICS',
+  'COMPONENT MAPPING',
+  'MATERIAL COMPOSITION',
+  'POWER SYSTEMS',
+  'ASSEMBLY INSTRUCTIONS',
+  'MANUFACTURING PATHWAY',
+  'FAILURE POINTS',
+  'OPTIMIZATION PATHS',
+] as const;
+
+export type TechnicalFileSectionId = (typeof TECHNICAL_FILE_SECTION_ORDER)[number];
+
+const TECHNICAL_FILE_HEADER_SET = new Set<string>(TECHNICAL_FILE_SECTION_ORDER);
+
+/**
+ * Parse bruce_briefing into section → content. Each header must appear as its own trimmed line;
+ * content runs until the next known header.
+ */
+export function parseTechnicalFile(text: string): Record<string, string> {
+  const raw = String(text ?? '').replace(/\r\n/g, '\n');
+  if (!raw.trim()) return {};
+  const lines = raw.split('\n');
+  const buffers: Record<string, string[]> = {};
+  let current: string | null = null;
+
+  const append = (key: string, line: string) => {
+    if (!buffers[key]) buffers[key] = [];
+    buffers[key].push(line);
+  };
+
+  for (const line of lines) {
+    const t = line.trim();
+    if (TECHNICAL_FILE_HEADER_SET.has(t)) {
+      current = t;
+      continue;
+    }
+    if (current) {
+      append(current, line);
+    } else {
+      append('TECHNICAL OVERVIEW', line);
+    }
+  }
+
+  const out: Record<string, string> = {};
+  for (const key of TECHNICAL_FILE_SECTION_ORDER) {
+    const b = buffers[key];
+    if (b && b.length) {
+      const s = b.join('\n').trim();
+      if (s) out[key] = s;
+    }
+  }
+  return out;
+}
+
 export type GadgetStatus = 'concept' | 'in_development' | 'field_ready' | 'retired' | string;
 
 export type GadgetRow = {
@@ -564,6 +621,27 @@ export async function updateSuitNotes(notes: string): Promise<boolean> {
     return ok;
   } catch {
     return false;
+  }
+}
+
+/** GET /api/arsenal/suit/capabilities — bullet list for suit technical file. */
+export async function fetchSuitCapabilities(): Promise<string[]> {
+  try {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/suit/capabilities', { method: 'GET' });
+    if (!ok || data == null) return [];
+    if (Array.isArray(data)) {
+      return data.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+    }
+    if (typeof data === 'object') {
+      const d = data as Record<string, unknown>;
+      const arr = d.capabilities ?? d.items;
+      if (Array.isArray(arr)) {
+        return arr.filter((x): x is string => typeof x === 'string' && x.trim().length > 0);
+      }
+    }
+    return [];
+  } catch {
+    return [];
   }
 }
 

@@ -3,8 +3,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { TechnicalIntelligenceFile } from '../components/TechnicalIntelligenceFile';
 import { Colors } from '../constants/colors';
-import { fetchSuitStatus, requestSuitAssessment, updateSuitNotes, type SuitStatus } from '../services/api';
+import {
+  fetchSuitCapabilities,
+  fetchSuitStatus,
+  parseTechnicalFile,
+  requestSuitAssessment,
+  updateSuitNotes,
+  type SuitStatus,
+} from '../services/api';
 
 function statusDot(status: string): string {
   const s = status.toLowerCase();
@@ -15,14 +23,16 @@ function statusDot(status: string): string {
 
 export default function SuitDetailScreen() {
   const [suit, setSuit] = useState<SuitStatus | null>(null);
+  const [capabilities, setCapabilities] = useState<string[]>([]);
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [assessing, setAssessing] = useState(false);
 
   const load = useCallback(async () => {
-    const s = await fetchSuitStatus();
+    const [s, caps] = await Promise.all([fetchSuitStatus(), fetchSuitCapabilities()]);
     setSuit(s);
+    setCapabilities(caps);
     setNotes(s?.notes ?? '');
   }, []);
 
@@ -30,32 +40,35 @@ export default function SuitDetailScreen() {
     void load();
   }, [load]);
 
-  const trlSystems = useMemo(() => {
-    const m = suit?.trl_systems ?? {};
-    return Object.keys(m)
-      .sort()
-      .map((k) => ({ name: k, trl: m[k] ?? 0 }));
-  }, [suit]);
+  const parsed = useMemo(() => {
+    const raw = suit?.bruce_briefing?.trim() ?? '';
+    if (!raw) return {};
+    const p = parseTechnicalFile(raw);
+    if (Object.keys(p).length === 0) {
+      return { 'TECHNICAL OVERVIEW': raw };
+    }
+    return p;
+  }, [suit?.bruce_briefing]);
+
+  const hasAssessment = Boolean(suit?.bruce_briefing?.trim());
 
   const onAssess = useCallback(async () => {
     if (assessing) return;
     setAssessing(true);
     try {
       const assessed = await requestSuitAssessment();
-      if (!assessed) return;
-
-      // Immediate UI refresh from assessment response...
-      setSuit(assessed);
-      setNotes(assessed.notes ?? '');
-
-      // ...then reload canonical suit state.
+      if (assessed) {
+        setSuit(assessed);
+        setNotes(assessed.notes ?? '');
+      }
       const fresh = await fetchSuitStatus();
       if (fresh) {
         setSuit(fresh);
         setNotes(fresh.notes ?? '');
       }
+      const caps = await fetchSuitCapabilities();
+      setCapabilities(caps);
     } catch (e) {
-      // Keep the UI silent, but don't swallow completely.
       console.warn('Suit assessment failed', e);
     } finally {
       setAssessing(false);
@@ -77,7 +90,11 @@ export default function SuitDetailScreen() {
     <View style={styles.root}>
       <Stack.Screen options={{ title: 'Suit' }} />
       <SafeAreaView style={styles.safe} edges={['bottom']}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
           <View style={styles.headerRow}>
             <Text style={styles.headerLabel} allowFontScaling={false}>
               BATMAN BEYOND SUIT
@@ -87,86 +104,41 @@ export default function SuitDetailScreen() {
 
           <Text style={styles.priority}>{suit?.current_priority?.trim() || 'No priority set.'}</Text>
 
-          <Text style={styles.sectionLabel} allowFontScaling={false}>
-            BRUCE'S ENGINEERING BRIEF
-          </Text>
-          <Text style={styles.brief}>{suit?.bruce_briefing?.trim() || '—'}</Text>
-
-          <Text style={styles.sectionLabel} allowFontScaling={false}>
-            TRL BREAKDOWN
-          </Text>
-          {trlSystems.length ? (
-            trlSystems.map((r) => (
-              <View key={r.name} style={styles.trlRow}>
-                <View style={styles.trlRowTop}>
-                  <Text style={styles.trlName}>{r.name.toUpperCase()}</Text>
-                  <Text style={styles.trlValue}>{Math.max(0, Math.min(9, r.trl))}</Text>
-                </View>
-                <View style={styles.barTrack}>
-                  <View style={[styles.barFill, { width: `${(Math.max(0, Math.min(9, r.trl)) / 9) * 100}%` }]} />
-                </View>
-              </View>
-            ))
+          {!hasAssessment ? (
+            <Text style={styles.emptyFile}>No technical file. Request assessment to generate.</Text>
           ) : (
-            <Text style={styles.muted}>No systems.</Text>
-          )}
-
-          <Text style={styles.sectionLabel} allowFontScaling={false}>
-            PRIORITIES
-          </Text>
-          {suit?.priorities?.length ? (
-            suit.priorities.map((p, i) => (
-              <Text key={`${p}-${i}`} style={styles.bullet}>
-                • {p}
-              </Text>
-            ))
-          ) : (
-            <Text style={styles.muted}>—</Text>
-          )}
-
-          <Text style={[styles.sectionLabel, { color: Colors.alert }]} allowFontScaling={false}>
-            BLOCKERS
-          </Text>
-          {suit?.blockers?.length ? (
-            suit.blockers.map((b, i) => (
-              <Text key={`${b}-${i}`} style={styles.blocker}>
-                ⚠ {b}
-              </Text>
-            ))
-          ) : (
-            <Text style={styles.muted}>—</Text>
+            <TechnicalIntelligenceFile parsed={parsed} capabilities={capabilities.length ? capabilities : undefined} />
           )}
         </ScrollView>
 
-        <View style={styles.bottomBar}>
-          <Pressable
-            onPress={onAssess}
-            disabled={assessing}
-            style={({ pressed }) => [
-              styles.btn,
-              pressed && styles.pressed,
-              assessing && styles.disabled,
-            ]}
-            accessibilityRole="button"
-            accessibilityLabel="Request assessment"
-          >
-            <Text
-              style={assessing ? styles.btnTextMuted : styles.btnTextAccent}
-              allowFontScaling={false}
+        <View style={styles.footer}>
+          <View style={styles.footerRow}>
+            <Pressable
+              onPress={() => void onAssess()}
+              disabled={assessing}
+              style={({ pressed }) => [
+                styles.footerBtn,
+                styles.footerBtnAccent,
+                pressed && styles.pressed,
+                assessing && styles.disabled,
+              ]}
             >
-              {assessing ? 'ANALYZING...' : 'REQUEST ASSESSMENT'}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setNotesOpen(true)}
-            style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
-            accessibilityRole="button"
-            accessibilityLabel="Update notes"
-          >
-            <Text style={styles.btnTextMuted} allowFontScaling={false}>
-              UPDATE NOTES
-            </Text>
-          </Pressable>
+              <Text
+                style={[styles.footerBtnAccentText, assessing && { color: Colors.textSecondary }]}
+                allowFontScaling={false}
+              >
+                {assessing ? 'ANALYZING...' : 'REQUEST ASSESSMENT'}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setNotesOpen(true)}
+              style={({ pressed }) => [styles.footerBtn, pressed && styles.pressed]}
+            >
+              <Text style={styles.footerBtnMuted} allowFontScaling={false}>
+                UPDATE NOTES
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </SafeAreaView>
 
@@ -194,7 +166,7 @@ export default function SuitDetailScreen() {
                 onPress={() => setNotesOpen(false)}
                 style={({ pressed }) => [styles.modalBtn, pressed && styles.pressed]}
               >
-                <Text style={styles.btnTextMuted} allowFontScaling={false}>
+                <Text style={styles.footerBtnMuted} allowFontScaling={false}>
                   CANCEL
                 </Text>
               </Pressable>
@@ -203,7 +175,7 @@ export default function SuitDetailScreen() {
                 disabled={saving}
                 style={({ pressed }) => [styles.modalBtn, pressed && styles.pressed, saving && styles.disabled]}
               >
-                <Text style={styles.btnTextAccent} allowFontScaling={false}>
+                <Text style={styles.footerBtnAccentText} allowFontScaling={false}>
                   SAVE
                 </Text>
               </Pressable>
@@ -218,39 +190,65 @@ export default function SuitDetailScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
   safe: { flex: 1 },
-  content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 18 },
+  scroll: { flex: 1 },
+  content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 24 },
   pressed: { opacity: 0.75 },
-  disabled: { opacity: 0.4 },
+  disabled: { opacity: 0.45 },
 
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   headerLabel: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.accent },
   dot: { width: 6, height: 6, borderRadius: 3 },
-  priority: { marginTop: 10, fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
+  priority: { marginTop: 10, fontSize: 16, fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
 
-  sectionLabel: { marginTop: 18, fontSize: 12, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
-  brief: { marginTop: 8, fontSize: 15, fontStyle: 'italic', color: Colors.textPrimary, lineHeight: 24 },
-  muted: { marginTop: 8, fontSize: 14, color: Colors.textSecondary },
+  emptyFile: {
+    marginTop: 32,
+    textAlign: 'center',
+    fontSize: 14,
+    color: Colors.textSecondary,
+    lineHeight: 22,
+  },
 
-  trlRow: { marginTop: 12, borderWidth: 1, borderColor: Colors.border, padding: 12 },
-  trlRowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  trlName: { fontSize: 12, color: Colors.textSecondary },
-  trlValue: { fontSize: 12, color: Colors.textPrimary, fontWeight: '700' },
-  barTrack: { height: 6, backgroundColor: Colors.border, marginTop: 10 },
-  barFill: { height: 6, backgroundColor: Colors.accent },
-
-  bullet: { marginTop: 8, fontSize: 14, color: Colors.textPrimary, lineHeight: 22 },
-  blocker: { marginTop: 8, fontSize: 14, color: Colors.alert, lineHeight: 22 },
-
-  bottomBar: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 14, borderTopWidth: 1, borderTopColor: Colors.border },
-  btn: { flex: 1, height: 44, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
-  btnTextAccent: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.accent, fontWeight: '700' },
-  btnTextMuted: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 14,
+    backgroundColor: Colors.background,
+  },
+  footerRow: { flexDirection: 'row', gap: 10 },
+  footerBtn: {
+    flex: 1,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  footerBtnAccent: { borderColor: Colors.accent },
+  footerBtnAccentText: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.accent,
+    fontWeight: '700',
+  },
+  footerBtnMuted: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', paddingHorizontal: 18 },
   modalCard: { borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background, padding: 16 },
   modalTitle: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.accent, marginBottom: 12 },
-  modalInput: { minHeight: 160, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.inputBackground, color: Colors.textPrimary, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, textAlignVertical: 'top' },
+  modalInput: {
+    minHeight: 160,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.inputBackground,
+    color: Colors.textPrimary,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    textAlignVertical: 'top',
+  },
   modalBtns: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 12 },
   modalBtn: { height: 44, paddingHorizontal: 12, justifyContent: 'center', borderWidth: 1, borderColor: Colors.border },
 });
-
