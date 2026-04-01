@@ -44,7 +44,8 @@ export default function SuitDetailScreen() {
     const raw = suit?.bruce_briefing?.trim() ?? '';
     if (!raw) return {};
     const p = parseTechnicalFile(raw);
-    if (Object.keys(p).length === 0) {
+    const hasAnyContent = Object.values(p).some((v) => String(v ?? '').trim().length > 0);
+    if (Object.keys(p).length === 0 || !hasAnyContent) {
       return { 'TECHNICAL OVERVIEW': raw };
     }
     return p;
@@ -56,16 +57,10 @@ export default function SuitDetailScreen() {
     if (assessing) return;
     setAssessing(true);
     try {
-      const assessed = await requestSuitAssessment();
-      if (assessed) {
-        setSuit(assessed);
-        setNotes(assessed.notes ?? '');
-      }
+      await requestSuitAssessment();
       const fresh = await fetchSuitStatus();
-      if (fresh) {
-        setSuit(fresh);
-        setNotes(fresh.notes ?? '');
-      }
+      setSuit(fresh);
+      setNotes(fresh?.notes ?? '');
       const caps = await fetchSuitCapabilities();
       setCapabilities(caps);
     } catch (e) {

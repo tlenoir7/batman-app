@@ -88,7 +88,8 @@ export default function GadgetDetailScreen() {
     const raw = gadget?.bruce_briefing?.trim() ?? '';
     if (!raw) return {};
     const p = parseTechnicalFile(raw);
-    if (Object.keys(p).length === 0) {
+    const hasAnyContent = Object.values(p).some((v) => String(v ?? '').trim().length > 0);
+    if (Object.keys(p).length === 0 || !hasAnyContent) {
       return { 'TECHNICAL OVERVIEW': raw };
     }
     return p;

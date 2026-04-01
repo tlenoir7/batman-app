@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Stack, router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -131,16 +132,19 @@ export default function ContingenciesScreen() {
     async (p: ContingencyProposal, index: number) => {
       if (savingProposalIdx !== null) return;
       setSavingProposalIdx(index);
-      const row = await createContingency({
-        title: String(p.title || '').trim() || 'Untitled',
-        classification: p.classification || 'STANDARD',
-        trigger_condition: String(p.trigger_condition ?? ''),
-        objective: String(p.objective ?? ''),
-        execution_steps: String(p.execution_steps ?? ''),
-        failsafe_within: String(p.failsafe_within ?? ''),
-      });
-      setSavingProposalIdx(null);
-      if (row?.cont_id) {
+      try {
+        const row = await createContingency({
+          title: String(p.title || '').trim() || 'Untitled',
+          classification: p.classification || 'STANDARD',
+          trigger_condition: String(p.trigger_condition ?? ''),
+          objective: String(p.objective ?? ''),
+          execution_steps: String(p.execution_steps ?? ''),
+          failsafe_within: String(p.failsafe_within ?? ''),
+        });
+        if (!row?.cont_id) {
+          Alert.alert('Save failed', 'Could not create contingency. Please try again.');
+          return;
+        }
         setProposeOpen(false);
         setProposeResults(null);
         await load();
@@ -148,6 +152,13 @@ export default function ContingenciesScreen() {
           pathname: './contingencydetail',
           params: { cont_id: row.cont_id },
         });
+      } catch (e) {
+        Alert.alert(
+          'Save failed',
+          e instanceof Error ? e.message : 'Something went wrong. Please try again.'
+        );
+      } finally {
+        setSavingProposalIdx(null);
       }
     },
     [load, savingProposalIdx]
@@ -413,30 +424,35 @@ export default function ContingenciesScreen() {
                       const expanded = expandedProposalIdx === i;
                       return (
                         <View key={`${p.title}-${i}`} style={styles.proposalRow}>
-                          <Pressable
-                            onPress={() => toggleProposalExpand(i)}
-                            style={({ pressed }) => [styles.proposalHeader, pressed && styles.pressed]}
-                            accessibilityRole="button"
-                            accessibilityLabel={
-                              expanded ? 'Collapse proposal details' : 'Expand proposal details'
-                            }
-                          >
+                          <View style={styles.proposalHeader}>
                             <View style={styles.proposalHeaderRow}>
-                              <Text style={styles.cardTitle} numberOfLines={2}>
-                                {p.title}
-                              </Text>
-                              <Ionicons
-                                name={expanded ? 'chevron-up' : 'chevron-down'}
-                                size={20}
-                                color={Colors.textSecondary}
-                              />
+                              <View style={styles.proposalTitleBlock}>
+                                <Text style={styles.cardTitle} numberOfLines={2}>
+                                  {p.title}
+                                </Text>
+                                {!expanded ? (
+                                  <Text style={styles.trigger} numberOfLines={2}>
+                                    {p.trigger_condition || p.objective || '—'}
+                                  </Text>
+                                ) : null}
+                              </View>
+                              <Pressable
+                                onPress={() => toggleProposalExpand(i)}
+                                hitSlop={8}
+                                style={({ pressed }) => [styles.proposalChevronBtn, pressed && styles.pressed]}
+                                accessibilityRole="button"
+                                accessibilityLabel={
+                                  expanded ? 'Collapse proposal details' : 'Expand proposal details'
+                                }
+                              >
+                                <Ionicons
+                                  name={expanded ? 'chevron-up' : 'chevron-down'}
+                                  size={20}
+                                  color={Colors.textSecondary}
+                                />
+                              </Pressable>
                             </View>
-                            {!expanded ? (
-                              <Text style={styles.trigger} numberOfLines={2}>
-                                {p.trigger_condition || p.objective || '—'}
-                              </Text>
-                            ) : null}
-                          </Pressable>
+                          </View>
                           {expanded ? (
                             <View style={styles.proposalExpanded}>
                               <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
@@ -650,6 +666,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
+  proposalTitleBlock: { flex: 1, minWidth: 0 },
+  proposalChevronBtn: { padding: 4, justifyContent: 'center', alignItems: 'center' },
   proposalExpanded: {
     paddingHorizontal: 12,
     paddingBottom: 12,
