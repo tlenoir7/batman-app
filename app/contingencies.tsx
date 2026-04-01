@@ -61,6 +61,8 @@ export default function ContingenciesScreen() {
   const [proposeSituation, setProposeSituation] = useState('');
   const [proposeResults, setProposeResults] = useState<ContingencyProposal[] | null>(null);
   const [proposing, setProposing] = useState(false);
+  const [expandedProposalIdx, setExpandedProposalIdx] = useState<number | null>(null);
+  const [savingProposalIdx, setSavingProposalIdx] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +74,10 @@ export default function ContingenciesScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setExpandedProposalIdx(null);
+  }, [proposeResults]);
 
   const { failsafe, standard } = useMemo(() => {
     const fs = rows.filter(isFailsafe);
@@ -121,8 +127,10 @@ export default function ContingenciesScreen() {
     setProposing(false);
   }, [proposeSituation, proposing]);
 
-  const addProposal = useCallback(
-    async (p: ContingencyProposal) => {
+  const saveProposedProposal = useCallback(
+    async (p: ContingencyProposal, index: number) => {
+      if (savingProposalIdx !== null) return;
+      setSavingProposalIdx(index);
       const row = await createContingency({
         title: String(p.title || '').trim() || 'Untitled',
         classification: p.classification || 'STANDARD',
@@ -131,14 +139,19 @@ export default function ContingenciesScreen() {
         execution_steps: String(p.execution_steps ?? ''),
         failsafe_within: String(p.failsafe_within ?? ''),
       });
+      setSavingProposalIdx(null);
       if (row) {
         setProposeOpen(false);
         setProposeResults(null);
         await load();
       }
     },
-    [load]
+    [load, savingProposalIdx]
   );
+
+  const toggleProposalExpand = useCallback((index: number) => {
+    setExpandedProposalIdx((prev) => (prev === index ? null : index));
+  }, []);
 
   const goDetail = useCallback((id: string) => {
     router.push({ pathname: './contingencydetail', params: { cont_id: id } });
@@ -390,18 +403,82 @@ export default function ContingenciesScreen() {
                 </Text>
                 <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
                   {proposeResults.length ? (
-                    proposeResults.map((p, i) => (
-                      <Pressable
-                        key={`${p.title}-${i}`}
-                        onPress={() => void addProposal(p)}
-                        style={({ pressed }) => [styles.proposalRow, pressed && styles.pressed]}
-                      >
-                        <Text style={styles.cardTitle}>{p.title}</Text>
-                        <Text style={styles.trigger} numberOfLines={2}>
-                          {p.trigger_condition || p.objective || '—'}
-                        </Text>
-                      </Pressable>
-                    ))
+                    proposeResults.map((p, i) => {
+                      const expanded = expandedProposalIdx === i;
+                      return (
+                        <View key={`${p.title}-${i}`} style={styles.proposalRow}>
+                          <Pressable
+                            onPress={() => toggleProposalExpand(i)}
+                            style={({ pressed }) => [styles.proposalHeader, pressed && styles.pressed]}
+                            accessibilityRole="button"
+                            accessibilityLabel={
+                              expanded ? 'Collapse proposal details' : 'Expand proposal details'
+                            }
+                          >
+                            <View style={styles.proposalHeaderRow}>
+                              <Text style={styles.cardTitle} numberOfLines={2}>
+                                {p.title}
+                              </Text>
+                              <Ionicons
+                                name={expanded ? 'chevron-up' : 'chevron-down'}
+                                size={20}
+                                color={Colors.textSecondary}
+                              />
+                            </View>
+                            {!expanded ? (
+                              <Text style={styles.trigger} numberOfLines={2}>
+                                {p.trigger_condition || p.objective || '—'}
+                              </Text>
+                            ) : null}
+                          </Pressable>
+                          {expanded ? (
+                            <View style={styles.proposalExpanded}>
+                              <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
+                                TITLE
+                              </Text>
+                              <Text style={styles.proposalDetailText}>{p.title}</Text>
+                              <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
+                                TRIGGER CONDITION
+                              </Text>
+                              <Text style={styles.proposalDetailText}>
+                                {p.trigger_condition?.trim() || '—'}
+                              </Text>
+                              <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
+                                OBJECTIVE
+                              </Text>
+                              <Text style={styles.proposalDetailText}>{p.objective?.trim() || '—'}</Text>
+                              <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
+                                EXECUTION STEPS
+                              </Text>
+                              <Text style={[styles.proposalDetailText, styles.proposalDetailMultiline]}>
+                                {p.execution_steps?.trim() || '—'}
+                              </Text>
+                              <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
+                                FAILSAFE WITHIN
+                              </Text>
+                              <Text style={[styles.proposalDetailText, styles.proposalDetailMultiline]}>
+                                {p.failsafe_within?.trim() || '—'}
+                              </Text>
+                              <Pressable
+                                onPress={() => void saveProposedProposal(p, i)}
+                                disabled={savingProposalIdx !== null}
+                                style={({ pressed }) => [
+                                  styles.proposalSaveBtn,
+                                  pressed && styles.pressed,
+                                  savingProposalIdx !== null && styles.disabled,
+                                ]}
+                                accessibilityRole="button"
+                                accessibilityLabel="Save contingency"
+                              >
+                                <Text style={styles.btnAccent} allowFontScaling={false}>
+                                  {savingProposalIdx === i ? '…' : 'SAVE'}
+                                </Text>
+                              </Pressable>
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })
                   ) : (
                     <Text style={styles.empty}>No proposals.</Text>
                   )}
@@ -559,5 +636,38 @@ const styles = StyleSheet.create({
   },
   btnMuted: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
   btnAccent: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.accent, fontWeight: '700' },
-  proposalRow: { borderWidth: 1, borderColor: Colors.border, padding: 12, marginBottom: 10 },
+  proposalRow: { borderWidth: 1, borderColor: Colors.border, marginBottom: 10 },
+  proposalHeader: { padding: 12 },
+  proposalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  proposalExpanded: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  proposalDetailLabel: {
+    fontSize: 10,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: Colors.textSecondary,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  proposalDetailText: { fontSize: 14, color: Colors.textPrimary },
+  proposalDetailMultiline: { marginTop: 0 },
+  proposalSaveBtn: {
+    marginTop: 16,
+    height: 44,
+    paddingHorizontal: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.accent,
+    alignSelf: 'stretch',
+  },
 });
