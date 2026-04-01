@@ -533,9 +533,13 @@ export type TechnicalFileSectionId = (typeof TECHNICAL_FILE_SECTION_ORDER)[numbe
 
 const TECHNICAL_FILE_HEADER_SET = new Set<string>(TECHNICAL_FILE_SECTION_ORDER);
 
+function normalizeTechnicalHeaderLine(line: string): string {
+  return line.replace(/^#+\s*/, '').replace(/\*\*/g, '').trim().toUpperCase();
+}
+
 /**
- * Parse bruce_briefing into section → content. Each header must appear as its own trimmed line;
- * content runs until the next known header.
+ * Parse bruce_briefing into section → content. Headers may use markdown (##, #, **).
+ * Content runs until the next known header.
  */
 export function parseTechnicalFile(text: string): Record<string, string> {
   const raw = String(text ?? '').replace(/\r\n/g, '\n');
@@ -550,9 +554,9 @@ export function parseTechnicalFile(text: string): Record<string, string> {
   };
 
   for (const line of lines) {
-    const t = line.trim();
-    if (TECHNICAL_FILE_HEADER_SET.has(t)) {
-      current = t;
+    const normalizedLine = normalizeTechnicalHeaderLine(line);
+    if (TECHNICAL_FILE_HEADER_SET.has(normalizedLine)) {
+      current = normalizedLine;
       continue;
     }
     if (current) {
