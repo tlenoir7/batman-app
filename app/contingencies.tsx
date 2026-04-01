@@ -140,10 +140,14 @@ export default function ContingenciesScreen() {
         failsafe_within: String(p.failsafe_within ?? ''),
       });
       setSavingProposalIdx(null);
-      if (row) {
+      if (row?.cont_id) {
         setProposeOpen(false);
         setProposeResults(null);
         await load();
+        router.push({
+          pathname: './contingencydetail',
+          params: { cont_id: row.cont_id },
+        });
       }
     },
     [load, savingProposalIdx]
@@ -153,7 +157,9 @@ export default function ContingenciesScreen() {
     setExpandedProposalIdx((prev) => (prev === index ? null : index));
   }, []);
 
-  const goDetail = useCallback((id: string) => {
+  const goDetail = useCallback((contId: string) => {
+    const id = String(contId || '').trim();
+    if (!id) return;
     router.push({ pathname: './contingencydetail', params: { cont_id: id } });
   }, []);
 

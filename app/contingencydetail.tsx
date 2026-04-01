@@ -40,17 +40,39 @@ function isFailsafeRow(c: ContingencyRow | null): boolean {
   return String(c?.classification || '').toUpperCase() === 'FAILSAFE';
 }
 
+function paramId(raw: string | string[] | undefined): string {
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return String(v ?? '').trim();
+}
+
 export default function ContingencyDetailScreen() {
-  const params = useLocalSearchParams<{ cont_id?: string }>();
-  const contId = String(params.cont_id || '').trim();
+  const params = useLocalSearchParams<{ cont_id?: string | string[] }>();
+  const contId = useMemo(() => paramId(params.cont_id), [params.cont_id]);
 
   const [row, setRow] = useState<ContingencyRow | null>(null);
   const [assessing, setAssessing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!contId) return;
-    const r = await getContingency(contId);
-    setRow(r);
+    if (!contId) {
+      setRow(null);
+      setLoadError('Missing contingency id.');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const r = await getContingency(contId);
+      setRow(r);
+      if (!r) setLoadError('Could not load this contingency.');
+    } catch (e) {
+      setRow(null);
+      setLoadError(e instanceof Error ? e.message : 'Failed to load contingency.');
+    } finally {
+      setLoading(false);
+    }
   }, [contId]);
 
   useEffect(() => {
@@ -123,104 +145,120 @@ export default function ContingencyDetailScreen() {
     <View style={styles.root}>
       <Stack.Screen options={{ title: row?.title || 'Contingency' }} />
       <SafeAreaView style={styles.safe} edges={['bottom']}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.badgeRow}>
-            <View style={[styles.clsBadge, { backgroundColor: cs.bg, borderColor: cs.border }]}>
-              <Text style={[styles.clsBadgeText, { color: cs.fg }]} allowFontScaling={false}>
-                {cls.toUpperCase()}
-              </Text>
-            </View>
-            <View style={[styles.stBadge, { borderColor: stColor }]}>
-              <Text style={[styles.stBadgeText, { color: stColor }]} allowFontScaling={false}>
-                {String(row?.status || '—').toUpperCase()}
-              </Text>
-            </View>
+        {loading ? (
+          <View style={styles.centerMsg}>
+            <Text style={styles.muted}>Loading…</Text>
           </View>
+        ) : !row && loadError ? (
+          <View style={styles.centerMsg}>
+            <Text style={styles.errorText}>{loadError}</Text>
+          </View>
+        ) : row ? (
+          <>
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+              <View style={styles.badgeRow}>
+                <View style={[styles.clsBadge, { backgroundColor: cs.bg, borderColor: cs.border }]}>
+                  <Text style={[styles.clsBadgeText, { color: cs.fg }]} allowFontScaling={false}>
+                    {cls.toUpperCase()}
+                  </Text>
+                </View>
+                <View style={[styles.stBadge, { borderColor: stColor }]}>
+                  <Text style={[styles.stBadgeText, { color: stColor }]} allowFontScaling={false}>
+                    {String(row.status || '—').toUpperCase()}
+                  </Text>
+                </View>
+              </View>
 
-          <Text style={styles.label} allowFontScaling={false}>
-            TRIGGER CONDITION
-          </Text>
-          <Text style={styles.value}>{row?.trigger_condition?.trim() || '—'}</Text>
-
-          <Text style={styles.label} allowFontScaling={false}>
-            OBJECTIVE
-          </Text>
-          <Text style={styles.value}>{row?.objective?.trim() || '—'}</Text>
-
-          <Text style={styles.label} allowFontScaling={false}>
-            EXECUTION STEPS
-          </Text>
-          {numberedSteps.length ? (
-            numberedSteps.map((line, i) => (
-              <Text key={`${i}-${line}`} style={styles.stepLine}>
-                {i + 1}. {line}
+              <Text style={styles.label} allowFontScaling={false}>
+                TRIGGER CONDITION
               </Text>
-            ))
-          ) : (
-            <Text style={styles.value}>—</Text>
-          )}
+              <Text style={styles.value}>{row.trigger_condition?.trim() || '—'}</Text>
 
-          <Text style={[styles.label, { color: Colors.alert }]} allowFontScaling={false}>
-            FAILSAFE WITHIN
-          </Text>
-          <Text style={styles.value}>{row?.failsafe_within?.trim() || '—'}</Text>
+              <Text style={styles.label} allowFontScaling={false}>
+                OBJECTIVE
+              </Text>
+              <Text style={styles.value}>{row.objective?.trim() || '—'}</Text>
 
-          <Text style={[styles.sectionLabel, { color: Colors.accent }]} allowFontScaling={false}>
-            BRUCE'S ASSESSMENT
-          </Text>
-          <Text style={styles.assessment}>{row?.bruce_assessment?.trim() || '—'}</Text>
-        </ScrollView>
+              <Text style={styles.label} allowFontScaling={false}>
+                EXECUTION STEPS
+              </Text>
+              {numberedSteps.length ? (
+                numberedSteps.map((line, i) => (
+                  <Text key={`${i}-${line}`} style={styles.stepLine}>
+                    {i + 1}. {line}
+                  </Text>
+                ))
+              ) : (
+                <Text style={styles.value}>—</Text>
+              )}
 
-        <View style={styles.bottomBar}>
-          <Pressable
-            onPress={() => void onAssess()}
-            disabled={assessing}
-            style={({ pressed }) => [
-              styles.btn,
-              styles.btnAccent,
-              pressed && styles.pressed,
-              assessing && styles.disabled,
-            ]}
-          >
-            <Text style={[styles.btnTextAccent, assessing && { color: Colors.textSecondary }]} allowFontScaling={false}>
-              {assessing ? 'ANALYZING...' : 'REQUEST ASSESSMENT'}
-            </Text>
-          </Pressable>
-        </View>
-        <View style={styles.bottomBar}>
-          <Pressable
-            onPress={onActivate}
-            style={({ pressed }) => [styles.btn, styles.btnActivate, pressed && styles.pressed]}
-          >
-            <Text style={styles.btnTextActivate} allowFontScaling={false}>
-              ACTIVATE
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => void onRetire()}
-            style={({ pressed }) => [styles.btn, styles.btnRetire, pressed && styles.pressed]}
-          >
-            <Text style={styles.btnTextRetire} allowFontScaling={false}>
-              RETIRE
-            </Text>
-          </Pressable>
-        </View>
-        <View style={[styles.bottomBar, { paddingBottom: 14 }]}>
-          <Pressable
-            onPress={onDelete}
-            disabled={isFailsafeRow(row)}
-            style={({ pressed }) => [
-              styles.btn,
-              styles.btnDelete,
-              pressed && styles.pressed,
-              isFailsafeRow(row) && styles.disabled,
-            ]}
-          >
-            <Text style={styles.btnTextDelete} allowFontScaling={false}>
-              DELETE
-            </Text>
-          </Pressable>
-        </View>
+              <Text style={[styles.label, { color: Colors.alert }]} allowFontScaling={false}>
+                FAILSAFE WITHIN
+              </Text>
+              <Text style={styles.value}>{row.failsafe_within?.trim() || '—'}</Text>
+
+              <Text style={[styles.sectionLabel, { color: Colors.accent }]} allowFontScaling={false}>
+                BRUCE'S ASSESSMENT
+              </Text>
+              <Text style={styles.assessment}>{row.bruce_assessment?.trim() || '—'}</Text>
+            </ScrollView>
+
+            <View style={styles.bottomBar}>
+              <Pressable
+                onPress={() => void onAssess()}
+                disabled={assessing}
+                style={({ pressed }) => [
+                  styles.btn,
+                  styles.btnAccent,
+                  pressed && styles.pressed,
+                  assessing && styles.disabled,
+                ]}
+              >
+                <Text style={[styles.btnTextAccent, assessing && { color: Colors.textSecondary }]} allowFontScaling={false}>
+                  {assessing ? 'ANALYZING...' : 'REQUEST ASSESSMENT'}
+                </Text>
+              </Pressable>
+            </View>
+            <View style={styles.bottomBar}>
+              <Pressable
+                onPress={onActivate}
+                style={({ pressed }) => [styles.btn, styles.btnActivate, pressed && styles.pressed]}
+              >
+                <Text style={styles.btnTextActivate} allowFontScaling={false}>
+                  ACTIVATE
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void onRetire()}
+                style={({ pressed }) => [styles.btn, styles.btnRetire, pressed && styles.pressed]}
+              >
+                <Text style={styles.btnTextRetire} allowFontScaling={false}>
+                  RETIRE
+                </Text>
+              </Pressable>
+            </View>
+            <View style={[styles.bottomBar, { paddingBottom: 14 }]}>
+              <Pressable
+                onPress={onDelete}
+                disabled={isFailsafeRow(row)}
+                style={({ pressed }) => [
+                  styles.btn,
+                  styles.btnDelete,
+                  pressed && styles.pressed,
+                  isFailsafeRow(row) && styles.disabled,
+                ]}
+              >
+                <Text style={styles.btnTextDelete} allowFontScaling={false}>
+                  DELETE
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        ) : (
+          <View style={styles.centerMsg}>
+            <Text style={styles.errorText}>Unable to load contingency.</Text>
+          </View>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -262,6 +300,10 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     lineHeight: 24,
   },
+
+  centerMsg: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, minHeight: 120 },
+  muted: { fontSize: 14, color: Colors.textSecondary },
+  errorText: { fontSize: 14, color: Colors.alert, textAlign: 'center', lineHeight: 22 },
 
   bottomBar: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border },
   btn: { flex: 1, height: 44, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: Colors.border },
