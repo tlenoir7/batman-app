@@ -45,6 +45,31 @@ function statusBadgeColor(status: string): string {
   return Colors.textSecondary;
 }
 
+/** API may return strings or arrays; never call .trim() on unknown shapes. */
+function proposalStr(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  return '';
+}
+
+function proposalExecutionStepsForDisplay(p: { execution_steps?: unknown }): string {
+  const raw = p?.execution_steps;
+  const steps = Array.isArray(raw) ? raw : raw != null && raw !== '' ? [raw] : [];
+  const lines = steps
+    .map((s) => proposalStr(s).trim())
+    .filter(Boolean);
+  return lines.length ? lines.join('\n') : '—';
+}
+
+function proposalExecutionStepsForApi(p: { execution_steps?: unknown }): string {
+  const raw = p?.execution_steps;
+  if (Array.isArray(raw)) {
+    return raw.map((s) => proposalStr(s).trim()).filter(Boolean).join('\n');
+  }
+  return proposalStr(raw).trim();
+}
+
 export default function ContingenciesScreen() {
   const [rows, setRows] = useState<ContingencyRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -124,6 +149,9 @@ export default function ContingenciesScreen() {
     if (proposing) return;
     setProposing(true);
     const list = await proposeContingencies(proposeSituation.trim());
+    if (list.length > 0) {
+      console.log('[propose] first proposal:', JSON.stringify(list[0], null, 2));
+    }
     setProposeResults(list);
     setProposing(false);
   }, [proposeSituation, proposing]);
@@ -134,12 +162,12 @@ export default function ContingenciesScreen() {
       setSavingProposalIdx(index);
       try {
         const row = await createContingency({
-          title: String(p.title || '').trim() || 'Untitled',
-          classification: p.classification || 'STANDARD',
-          trigger_condition: String(p.trigger_condition ?? ''),
-          objective: String(p.objective ?? ''),
-          execution_steps: String(p.execution_steps ?? ''),
-          failsafe_within: String(p.failsafe_within ?? ''),
+          title: proposalStr(p?.title).trim() || 'Untitled',
+          classification: p?.classification || 'STANDARD',
+          trigger_condition: proposalStr(p?.trigger_condition),
+          objective: proposalStr(p?.objective),
+          execution_steps: proposalExecutionStepsForApi(p),
+          failsafe_within: proposalStr(p?.failsafe_within),
         });
         if (!row?.cont_id) {
           Alert.alert('Save failed', 'Could not create contingency. Please try again.');
@@ -165,7 +193,11 @@ export default function ContingenciesScreen() {
   );
 
   const toggleProposalExpand = useCallback((index: number) => {
-    setExpandedProposalIdx((prev) => (prev === index ? null : index));
+    try {
+      setExpandedProposalIdx((prev) => (prev === index ? null : index));
+    } catch (e) {
+      console.error('expand error', e);
+    }
   }, []);
 
   const goDetail = useCallback((contId: string) => {
@@ -422,17 +454,23 @@ export default function ContingenciesScreen() {
                   {proposeResults.length ? (
                     proposeResults.map((p, i) => {
                       const expanded = expandedProposalIdx === i;
+                      const titleText = proposalStr(p?.title).trim() || 'No title';
+                      const triggerPreview =
+                        proposalStr(p?.trigger_condition).trim() ||
+                        proposalStr(p?.objective).trim() ||
+                        '—';
+                      const stepsDisplay = proposalExecutionStepsForDisplay(p);
                       return (
-                        <View key={`${p.title}-${i}`} style={styles.proposalRow}>
+                        <View key={`proposal-${i}`} style={styles.proposalRow}>
                           <View style={styles.proposalHeader}>
                             <View style={styles.proposalHeaderRow}>
                               <View style={styles.proposalTitleBlock}>
                                 <Text style={styles.cardTitle} numberOfLines={2}>
-                                  {p.title}
+                                  {titleText}
                                 </Text>
                                 {!expanded ? (
                                   <Text style={styles.trigger} numberOfLines={2}>
-                                    {p.trigger_condition || p.objective || '—'}
+                                    {triggerPreview}
                                   </Text>
                                 ) : null}
                               </View>
@@ -458,28 +496,30 @@ export default function ContingenciesScreen() {
                               <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
                                 TITLE
                               </Text>
-                              <Text style={styles.proposalDetailText}>{p.title}</Text>
+                              <Text style={styles.proposalDetailText}>{titleText}</Text>
                               <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
                                 TRIGGER CONDITION
                               </Text>
                               <Text style={styles.proposalDetailText}>
-                                {p.trigger_condition?.trim() || '—'}
+                                {proposalStr(p?.trigger_condition).trim() || '—'}
                               </Text>
                               <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
                                 OBJECTIVE
                               </Text>
-                              <Text style={styles.proposalDetailText}>{p.objective?.trim() || '—'}</Text>
+                              <Text style={styles.proposalDetailText}>
+                                {proposalStr(p?.objective).trim() || '—'}
+                              </Text>
                               <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
                                 EXECUTION STEPS
                               </Text>
                               <Text style={[styles.proposalDetailText, styles.proposalDetailMultiline]}>
-                                {p.execution_steps?.trim() || '—'}
+                                {stepsDisplay}
                               </Text>
                               <Text style={styles.proposalDetailLabel} allowFontScaling={false}>
                                 FAILSAFE WITHIN
                               </Text>
                               <Text style={[styles.proposalDetailText, styles.proposalDetailMultiline]}>
-                                {p.failsafe_within?.trim() || '—'}
+                                {proposalStr(p?.failsafe_within).trim() || '—'}
                               </Text>
                               <Pressable
                                 onPress={() => void saveProposedProposal(p, i)}

@@ -979,7 +979,7 @@ export type ContingencyProposal = {
   classification: ContingencyClassification;
   trigger_condition?: string;
   objective?: string;
-  execution_steps?: string;
+  execution_steps?: string | string[];
   failsafe_within?: string;
 };
 
