@@ -161,7 +161,7 @@ export default function ContingenciesScreen() {
       if (savingProposalIdx !== null) return;
       setSavingProposalIdx(index);
       try {
-        const row = await createContingency({
+        const result = await createContingency({
           title: proposalStr(p?.title).trim() || 'Untitled',
           classification: p?.classification || 'STANDARD',
           trigger_condition: proposalStr(p?.trigger_condition),
@@ -169,16 +169,16 @@ export default function ContingenciesScreen() {
           execution_steps: proposalExecutionStepsForApi(p),
           failsafe_within: proposalStr(p?.failsafe_within),
         });
-        if (!row?.cont_id) {
-          Alert.alert('Save failed', 'Could not create contingency. Please try again.');
-          return;
-        }
+        const contId =
+          result?.cont_id ??
+          (result as { contingency?: { cont_id?: string } } | null)?.contingency?.cont_id;
+        if (!contId) throw new Error('No cont_id returned');
         setProposeOpen(false);
         setProposeResults(null);
         await load();
         router.push({
           pathname: './contingencydetail',
-          params: { cont_id: row.cont_id },
+          params: { cont_id: String(contId).trim() },
         });
       } catch (e) {
         Alert.alert(

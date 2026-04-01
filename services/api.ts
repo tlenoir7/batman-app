@@ -1028,10 +1028,51 @@ export async function createContingency(
     });
     if (!ok || data == null || typeof data !== 'object') return null;
     const d = data as Record<string, unknown>;
-    const c = d.contingency ?? d.contingency_row ?? d;
-    if (!c || typeof c !== 'object') return null;
-    const row = c as ContingencyRow;
-    if (typeof row.cont_id !== 'string') return null;
+    const nested = d.contingency ?? d.contingency_row;
+    const rowObj: Record<string, unknown> | null =
+      nested != null && typeof nested === 'object'
+        ? (nested as Record<string, unknown>)
+        : typeof d.cont_id === 'string' ||
+            typeof d.cont_id === 'number' ||
+            typeof d.id === 'string' ||
+            typeof d.id === 'number'
+          ? d
+          : null;
+    if (!rowObj) return null;
+    const rawId = rowObj.cont_id ?? rowObj.id ?? d.cont_id ?? d.id;
+    if (rawId == null) return null;
+    const cont_id = String(rawId).trim();
+    if (!cont_id) return null;
+
+    const row: ContingencyRow = {
+      cont_id,
+      title:
+        typeof rowObj.title === 'string' && rowObj.title.trim()
+          ? rowObj.title.trim()
+          : title,
+      classification:
+        (typeof rowObj.classification === 'string'
+          ? rowObj.classification
+          : fields.classification) ?? 'STANDARD',
+      status: (typeof rowObj.status === 'string' ? rowObj.status : 'STAGED') as ContingencyStatus,
+      trigger_condition:
+        typeof rowObj.trigger_condition === 'string'
+          ? rowObj.trigger_condition
+          : String(fields.trigger_condition ?? ''),
+      objective:
+        typeof rowObj.objective === 'string' ? rowObj.objective : String(fields.objective ?? ''),
+      execution_steps:
+        typeof rowObj.execution_steps === 'string'
+          ? rowObj.execution_steps
+          : String(fields.execution_steps ?? ''),
+      failsafe_within:
+        typeof rowObj.failsafe_within === 'string'
+          ? rowObj.failsafe_within
+          : String(fields.failsafe_within ?? ''),
+    };
+    if (typeof rowObj.bruce_assessment === 'string') {
+      row.bruce_assessment = rowObj.bruce_assessment;
+    }
     return row;
   } catch {
     return null;
