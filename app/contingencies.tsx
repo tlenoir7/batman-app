@@ -169,17 +169,12 @@ export default function ContingenciesScreen() {
           execution_steps: proposalExecutionStepsForApi(p),
           failsafe_within: proposalStr(p?.failsafe_within),
         });
-        const contId =
-          result?.cont_id ??
-          (result as { contingency?: { cont_id?: string } } | null)?.contingency?.cont_id;
+        const contId = result?.cont_id;
         if (!contId) throw new Error('No cont_id returned');
         setProposeOpen(false);
         setProposeResults(null);
         await load();
-        router.push({
-          pathname: './contingencydetail',
-          params: { cont_id: String(contId).trim() },
-        });
+        router.push({ pathname: './contingencydetail', params: { cont_id: contId } });
       } catch (e) {
         Alert.alert(
           'Save failed',

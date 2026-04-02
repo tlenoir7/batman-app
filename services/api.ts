@@ -1028,50 +1028,44 @@ export async function createContingency(
     });
     if (!ok || data == null || typeof data !== 'object') return null;
     const d = data as Record<string, unknown>;
-    const nested = d.contingency ?? d.contingency_row;
-    const rowObj: Record<string, unknown> | null =
-      nested != null && typeof nested === 'object'
-        ? (nested as Record<string, unknown>)
-        : typeof d.cont_id === 'string' ||
-            typeof d.cont_id === 'number' ||
-            typeof d.id === 'string' ||
-            typeof d.id === 'number'
-          ? d
-          : null;
-    if (!rowObj) return null;
-    const rawId = rowObj.cont_id ?? rowObj.id ?? d.cont_id ?? d.id;
-    if (rawId == null) return null;
-    const cont_id = String(rawId).trim();
-    if (!cont_id) return null;
+    const rowObj = (d.contingency ??
+      d.contingency_row ??
+      (d.cont_id ? d : null)) as Record<string, unknown> | null;
+    const contId = String(rowObj?.cont_id ?? rowObj?.id ?? d.cont_id ?? d.id ?? '').trim();
+    if (!contId) return null;
+    const merged: Record<string, unknown> = {
+      ...(rowObj != null ? rowObj : {}),
+      cont_id: contId,
+    };
 
     const row: ContingencyRow = {
-      cont_id,
+      cont_id: contId,
       title:
-        typeof rowObj.title === 'string' && rowObj.title.trim()
-          ? rowObj.title.trim()
+        typeof merged.title === 'string' && merged.title.trim()
+          ? merged.title.trim()
           : title,
       classification:
-        (typeof rowObj.classification === 'string'
-          ? rowObj.classification
+        (typeof merged.classification === 'string'
+          ? merged.classification
           : fields.classification) ?? 'STANDARD',
-      status: (typeof rowObj.status === 'string' ? rowObj.status : 'STAGED') as ContingencyStatus,
+      status: (typeof merged.status === 'string' ? merged.status : 'STAGED') as ContingencyStatus,
       trigger_condition:
-        typeof rowObj.trigger_condition === 'string'
-          ? rowObj.trigger_condition
+        typeof merged.trigger_condition === 'string'
+          ? merged.trigger_condition
           : String(fields.trigger_condition ?? ''),
       objective:
-        typeof rowObj.objective === 'string' ? rowObj.objective : String(fields.objective ?? ''),
+        typeof merged.objective === 'string' ? merged.objective : String(fields.objective ?? ''),
       execution_steps:
-        typeof rowObj.execution_steps === 'string'
-          ? rowObj.execution_steps
+        typeof merged.execution_steps === 'string'
+          ? merged.execution_steps
           : String(fields.execution_steps ?? ''),
       failsafe_within:
-        typeof rowObj.failsafe_within === 'string'
-          ? rowObj.failsafe_within
+        typeof merged.failsafe_within === 'string'
+          ? merged.failsafe_within
           : String(fields.failsafe_within ?? ''),
     };
-    if (typeof rowObj.bruce_assessment === 'string') {
-      row.bruce_assessment = rowObj.bruce_assessment;
+    if (typeof merged.bruce_assessment === 'string') {
+      row.bruce_assessment = merged.bruce_assessment;
     }
     return row;
   } catch {
