@@ -12,7 +12,7 @@ const CONTENT_TEXT = {
 } as const;
 
 function sectionHeaderAccent(id: string): string | undefined {
-  if (id === 'FAILURE POINTS') return Colors.alert;
+  if (id === 'FAILURE POINTS' || id === 'FAILURE MODES') return Colors.alert;
   if (id === 'OPTIMIZATION PATHS') return Colors.accent;
   return undefined;
 }

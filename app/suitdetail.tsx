@@ -9,10 +9,12 @@ import {
   fetchSuitCapabilities,
   fetchSuitStatus,
   parseTechnicalFile,
-  requestSuitAssessment,
+  regenerateSuitTechnicalFile,
   updateSuitNotes,
   type SuitStatus,
 } from '../services/api';
+
+const SUBTLE_MUTED = '#6b7280';
 
 function statusDot(status: string): string {
   const s = status.toLowerCase();
@@ -27,7 +29,7 @@ export default function SuitDetailScreen() {
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
-  const [assessing, setAssessing] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const load = useCallback(async () => {
     const [s, caps] = await Promise.all([fetchSuitStatus(), fetchSuitCapabilities()]);
@@ -40,6 +42,22 @@ export default function SuitDetailScreen() {
     void load();
   }, [load]);
 
+  const briefingReady = Boolean(suit?.bruce_briefing?.trim());
+
+  useEffect(() => {
+    if (briefingReady) return;
+    const id = setInterval(() => {
+      void (async () => {
+        const s = await fetchSuitStatus();
+        if (s) {
+          setSuit(s);
+          setNotes(s.notes ?? '');
+        }
+      })();
+    }, 3000);
+    return () => clearInterval(id);
+  }, [briefingReady]);
+
   const parsed = useMemo(() => {
     const raw = suit?.bruce_briefing?.trim() ?? '';
     if (!raw) return {};
@@ -51,24 +69,29 @@ export default function SuitDetailScreen() {
     return p;
   }, [suit?.bruce_briefing]);
 
-  const hasAssessment = Boolean(suit?.bruce_briefing?.trim());
-
-  const onAssess = useCallback(async () => {
-    if (assessing) return;
-    setAssessing(true);
+  const onRegenerate = useCallback(async () => {
+    if (regenerating) return;
+    setRegenerating(true);
     try {
-      await requestSuitAssessment();
-      const fresh = await fetchSuitStatus();
-      setSuit(fresh);
-      setNotes(fresh?.notes ?? '');
+      const fresh = await regenerateSuitTechnicalFile();
+      if (fresh) {
+        setSuit(fresh);
+        setNotes(fresh.notes ?? '');
+      } else {
+        const s = await fetchSuitStatus();
+        if (s) {
+          setSuit(s);
+          setNotes(s.notes ?? '');
+        }
+      }
       const caps = await fetchSuitCapabilities();
       setCapabilities(caps);
     } catch (e) {
-      console.warn('Suit assessment failed', e);
+      console.warn('Suit regenerate failed', e);
     } finally {
-      setAssessing(false);
+      setRegenerating(false);
     }
-  }, [assessing]);
+  }, [regenerating]);
 
   const onSaveNotes = useCallback(async () => {
     if (saving) return;
@@ -99,41 +122,31 @@ export default function SuitDetailScreen() {
 
           <Text style={styles.priority}>{suit?.current_priority?.trim() || 'No priority set.'}</Text>
 
-          {!hasAssessment ? (
-            <Text style={styles.emptyFile}>No technical file. Request assessment to generate.</Text>
+          {!briefingReady ? (
+            <Text style={styles.generatingHint}>Generating technical file...</Text>
           ) : (
             <TechnicalIntelligenceFile parsed={parsed} capabilities={capabilities.length ? capabilities : undefined} />
           )}
         </ScrollView>
 
         <View style={styles.footer}>
-          <View style={styles.footerRow}>
-            <Pressable
-              onPress={() => void onAssess()}
-              disabled={assessing}
-              style={({ pressed }) => [
-                styles.footerBtn,
-                styles.footerBtnAccent,
-                pressed && styles.pressed,
-                assessing && styles.disabled,
-              ]}
-            >
-              <Text
-                style={[styles.footerBtnAccentText, assessing && { color: Colors.textSecondary }]}
-                allowFontScaling={false}
-              >
-                {assessing ? 'ANALYZING...' : 'REQUEST ASSESSMENT'}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setNotesOpen(true)}
-              style={({ pressed }) => [styles.footerBtn, pressed && styles.pressed]}
-            >
-              <Text style={styles.footerBtnMuted} allowFontScaling={false}>
-                UPDATE NOTES
-              </Text>
-            </Pressable>
-          </View>
+          <Pressable
+            onPress={() => setNotesOpen(true)}
+            style={({ pressed }) => [styles.footerBtn, pressed && styles.pressed]}
+          >
+            <Text style={styles.footerBtnMuted} allowFontScaling={false}>
+              UPDATE NOTES
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void onRegenerate()}
+            disabled={regenerating}
+            style={({ pressed }) => [styles.regenerateBtn, pressed && styles.pressed, regenerating && styles.disabled]}
+          >
+            <Text style={styles.regenerateText} allowFontScaling={false}>
+              {regenerating ? 'Regenerating…' : 'Regenerate Technical File'}
+            </Text>
+          </Pressable>
         </View>
       </SafeAreaView>
 
@@ -195,11 +208,11 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3 },
   priority: { marginTop: 10, fontSize: 16, fontWeight: '700', color: Colors.textPrimary, marginBottom: 8 },
 
-  emptyFile: {
-    marginTop: 32,
+  generatingHint: {
+    marginTop: 48,
     textAlign: 'center',
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: SUBTLE_MUTED,
     lineHeight: 22,
   },
 
@@ -211,16 +224,13 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     backgroundColor: Colors.background,
   },
-  footerRow: { flexDirection: 'row', gap: 10 },
   footerBtn: {
-    flex: 1,
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  footerBtnAccent: { borderColor: Colors.accent },
   footerBtnAccentText: {
     fontSize: 10,
     letterSpacing: 2,
@@ -229,6 +239,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   footerBtnMuted: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
+
+  regenerateBtn: {
+    marginTop: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  regenerateText: {
+    fontSize: 12,
+    color: SUBTLE_MUTED,
+    textAlign: 'center',
+  },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', paddingHorizontal: 18 },
   modalCard: { borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background, padding: 16 },

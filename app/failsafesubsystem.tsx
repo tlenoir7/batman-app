@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -12,15 +12,18 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { TechnicalIntelligenceFile } from '../components/TechnicalIntelligenceFile';
 import { Colors } from '../constants/colors';
 import {
   fetchFailsafeSubsystem,
+  parseTechnicalFile,
   requestSubsystemAssessment,
   updateSubsystem,
   type FailsafeSubsystemDetail,
 } from '../services/api';
 
 const FS = Colors.alert;
+const SUBTLE_MUTED = '#6b7280';
 
 function clampTrl(n: number): number {
   const t = Math.round(Number(n));
@@ -47,7 +50,7 @@ export default function FailsafeSubsystemScreen() {
   const subsystemName = String(params.subsystem_name || '').trim();
 
   const [row, setRow] = useState<FailsafeSubsystemDetail | null>(null);
-  const [assessing, setAssessing] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [trl, setTrl] = useState('4');
@@ -74,6 +77,27 @@ export default function FailsafeSubsystemScreen() {
     void load();
   }, [load]);
 
+  const assessmentReady = Boolean(row?.bruce_assessment?.trim());
+
+  useEffect(() => {
+    if (assessmentReady || !subsystemName) return;
+    const id = setInterval(() => {
+      void load();
+    }, 3000);
+    return () => clearInterval(id);
+  }, [assessmentReady, subsystemName, load]);
+
+  const parsed = useMemo(() => {
+    const raw = row?.bruce_assessment?.trim() ?? '';
+    if (!raw) return {};
+    const p = parseTechnicalFile(raw);
+    const hasAnyContent = Object.values(p).some((v) => String(v ?? '').trim().length > 0);
+    if (Object.keys(p).length === 0 || !hasAnyContent) {
+      return { 'TECHNICAL OVERVIEW': raw };
+    }
+    return p;
+  }, [row?.bruce_assessment]);
+
   const openEdit = useCallback(() => {
     if (!row) return;
     setTrl(String(clampTrl(row.trl)));
@@ -84,17 +108,17 @@ export default function FailsafeSubsystemScreen() {
     setEditOpen(true);
   }, [row]);
 
-  const onAssess = useCallback(async () => {
-    if (!subsystemName || assessing) return;
-    setAssessing(true);
+  const onRegenerate = useCallback(async () => {
+    if (!subsystemName || regenerating) return;
+    setRegenerating(true);
     try {
       const d = await requestSubsystemAssessment(subsystemName);
       if (d) setRow(d);
       await load();
     } finally {
-      setAssessing(false);
+      setRegenerating(false);
     }
-  }, [subsystemName, assessing, load]);
+  }, [subsystemName, regenerating, load]);
 
   const onSave = useCallback(async () => {
     if (!subsystemName || saving) return;
@@ -164,25 +188,16 @@ export default function FailsafeSubsystemScreen() {
           ) : null}
 
           <Text style={styles.sectionLabel} allowFontScaling={false}>
-            BRUCE'S ASSESSMENT
+            TECHNICAL FILE
           </Text>
-          <Text style={styles.assessment}>{row?.bruce_assessment?.trim() || '—'}</Text>
+          {!assessmentReady ? (
+            <Text style={styles.generatingHint}>Generating technical file...</Text>
+          ) : (
+            <TechnicalIntelligenceFile parsed={parsed} />
+          )}
         </ScrollView>
 
         <View style={styles.bottomBar}>
-          <Pressable
-            onPress={() => void onAssess()}
-            disabled={assessing}
-            style={({ pressed }) => [
-              styles.btn,
-              pressed && styles.pressed,
-              assessing && styles.disabled,
-            ]}
-          >
-            <Text style={[styles.btnText, assessing && { color: Colors.textSecondary }]} allowFontScaling={false}>
-              {assessing ? 'ANALYZING...' : 'REQUEST ASSESSMENT'}
-            </Text>
-          </Pressable>
           <Pressable
             onPress={openEdit}
             style={({ pressed }) => [styles.btn, styles.btnMuted, pressed && styles.pressed]}
@@ -192,6 +207,15 @@ export default function FailsafeSubsystemScreen() {
             </Text>
           </Pressable>
         </View>
+        <Pressable
+          onPress={() => void onRegenerate()}
+          disabled={regenerating}
+          style={({ pressed }) => [styles.regenerateBtn, pressed && styles.pressed, regenerating && styles.disabled]}
+        >
+          <Text style={styles.regenerateText} allowFontScaling={false}>
+            {regenerating ? 'Regenerating…' : 'Regenerate Technical File'}
+          </Text>
+        </Pressable>
       </SafeAreaView>
 
       <Modal
@@ -306,17 +330,18 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     marginTop: 18,
+    marginBottom: 8,
     fontSize: 12,
     letterSpacing: 2,
     textTransform: 'uppercase',
     color: FS,
   },
-  assessment: {
+  generatingHint: {
     marginTop: 8,
-    fontSize: 15,
-    fontStyle: 'italic',
-    color: Colors.textPrimary,
-    lineHeight: 24,
+    textAlign: 'center',
+    fontSize: 14,
+    color: SUBTLE_MUTED,
+    lineHeight: 22,
   },
 
   bottomBar: {
@@ -324,7 +349,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 16,
     paddingTop: 10,
-    paddingBottom: 14,
+    paddingBottom: 4,
     borderTopWidth: 1,
     borderTopColor: FS,
   },
@@ -337,14 +362,19 @@ const styles = StyleSheet.create({
     borderColor: FS,
   },
   btnMuted: { borderColor: Colors.border },
-  btnText: {
-    fontSize: 10,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    color: FS,
-    fontWeight: '700',
-  },
   btnTextMuted: { fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', color: Colors.textSecondary },
+
+  regenerateBtn: {
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 14,
+    alignItems: 'center',
+  },
+  regenerateText: {
+    fontSize: 12,
+    color: SUBTLE_MUTED,
+    textAlign: 'center',
+  },
 
   modalOverlay: {
     flex: 1,

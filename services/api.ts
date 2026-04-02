@@ -516,7 +516,7 @@ export type SuitStatus = {
   notes?: string;
 };
 
-/** Ordered section headers in bruce_briefing structured assessments. */
+/** Ordered section headers in bruce_briefing / bruce_assessment structured assessments (suit + failsafe subsystems). */
 export const TECHNICAL_FILE_SECTION_ORDER = [
   'TECHNICAL OVERVIEW',
   'STRUCTURAL SCHEMATICS',
@@ -527,6 +527,12 @@ export const TECHNICAL_FILE_SECTION_ORDER = [
   'MANUFACTURING PATHWAY',
   'FAILURE POINTS',
   'OPTIMIZATION PATHS',
+  'CURRENT STATE',
+  'ENGINEERING REQUIREMENTS',
+  'DEVELOPMENT ROADMAP',
+  'MATERIAL AND COMPONENT REQUIREMENTS',
+  'FAILURE MODES',
+  'UAP CONNECTION',
 ] as const;
 
 export type TechnicalFileSectionId = (typeof TECHNICAL_FILE_SECTION_ORDER)[number];
@@ -595,21 +601,28 @@ export async function fetchSuitStatus(): Promise<SuitStatus | null> {
   try {
     const { ok, data } = await apiFetch<unknown>('/api/arsenal/suit', { method: 'GET' });
     if (!ok || !data || typeof data !== 'object') return null;
-    return data as SuitStatus;
+    const d = data as Record<string, unknown>;
+    const suit = d.suit ?? d;
+    if (!suit || typeof suit !== 'object') return null;
+    return suit as SuitStatus;
   } catch {
     return null;
   }
 }
 
-export async function requestSuitAssessment(): Promise<SuitStatus | null> {
+/** POST /api/arsenal/suit/regenerate — rebuild suit technical file (bruce_briefing). */
+export async function regenerateSuitTechnicalFile(): Promise<SuitStatus | null> {
   try {
-    const { ok, data } = await apiFetch<unknown>('/api/arsenal/suit/assess', {
+    const { ok, data } = await apiFetch<unknown>('/api/arsenal/suit/regenerate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
     if (!ok || !data || typeof data !== 'object') return null;
-    return data as SuitStatus;
+    const d = data as Record<string, unknown>;
+    const suit = d.suit ?? d;
+    if (!suit || typeof suit !== 'object') return null;
+    return suit as SuitStatus;
   } catch {
     return null;
   }
@@ -903,7 +916,7 @@ export async function requestSubsystemAssessment(
   if (!enc) return null;
   try {
     const { ok, data } = await apiFetch<unknown>(
-      `/api/failsafe/subsystems/${enc}/assess`,
+      `/api/failsafe/subsystems/${enc}/regenerate`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
