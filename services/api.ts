@@ -1021,6 +1021,26 @@ export async function fetchContingencies(): Promise<ContingencyRow[]> {
   }
 }
 
+/** GET/POST/PUT responses may be `{ ok, contingency }` or a flat row. */
+function contingencyRowFromApiEnvelope(d: Record<string, unknown>): ContingencyRow | null {
+  const inner = d.contingency ?? d.contingency_row ?? d ?? null;
+  if (!inner || typeof inner !== 'object') return null;
+  const raw = inner as Record<string, unknown>;
+  const cont_id = String(raw.cont_id ?? raw.id ?? '').trim();
+  if (!cont_id) return null;
+  return {
+    cont_id,
+    title: typeof raw.title === 'string' ? raw.title : String(raw.title ?? '').trim() || 'Untitled',
+    classification: (typeof raw.classification === 'string' ? raw.classification : 'STANDARD') as ContingencyClassification,
+    status: (typeof raw.status === 'string' ? raw.status : 'STAGED') as ContingencyStatus,
+    trigger_condition: typeof raw.trigger_condition === 'string' ? raw.trigger_condition : undefined,
+    objective: typeof raw.objective === 'string' ? raw.objective : undefined,
+    execution_steps: typeof raw.execution_steps === 'string' ? raw.execution_steps : undefined,
+    failsafe_within: typeof raw.failsafe_within === 'string' ? raw.failsafe_within : undefined,
+    bruce_assessment: typeof raw.bruce_assessment === 'string' ? raw.bruce_assessment : undefined,
+  };
+}
+
 export async function createContingency(
   fields: CreateContingencyPayload
 ): Promise<ContingencyRow | null> {
@@ -1092,12 +1112,7 @@ export async function getContingency(contId: string): Promise<ContingencyRow | n
   try {
     const { ok, data } = await apiFetch<unknown>(`/api/contingencies/${id}`, { method: 'GET' });
     if (!ok || data == null || typeof data !== 'object') return null;
-    const d = data as Record<string, unknown>;
-    const c = d.contingency ?? d;
-    if (!c || typeof c !== 'object') return null;
-    const row = c as ContingencyRow;
-    if (typeof row.cont_id !== 'string') return null;
-    return row;
+    return contingencyRowFromApiEnvelope(data as Record<string, unknown>);
   } catch {
     return null;
   }
@@ -1113,12 +1128,7 @@ export async function requestContingencyAssessment(contId: string): Promise<Cont
       body: JSON.stringify({}),
     });
     if (!ok || data == null || typeof data !== 'object') return null;
-    const d = data as Record<string, unknown>;
-    const c = d.contingency ?? d;
-    if (!c || typeof c !== 'object') return null;
-    const row = c as ContingencyRow;
-    if (typeof row.cont_id !== 'string') return null;
-    return row;
+    return contingencyRowFromApiEnvelope(data as Record<string, unknown>);
   } catch {
     return null;
   }
@@ -1137,12 +1147,7 @@ export async function updateContingency(
       body: JSON.stringify(fields ?? {}),
     });
     if (!ok || data == null || typeof data !== 'object') return null;
-    const d = data as Record<string, unknown>;
-    const c = d.contingency ?? d;
-    if (!c || typeof c !== 'object') return null;
-    const row = c as ContingencyRow;
-    if (typeof row.cont_id !== 'string') return null;
-    return row;
+    return contingencyRowFromApiEnvelope(data as Record<string, unknown>);
   } catch {
     return null;
   }
